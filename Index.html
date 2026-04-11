@@ -48,14 +48,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- EXTERNAL LIBRARIES -->
-    <!-- Supabase: Database connection for user data & authentication -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Chart.js: Creates admin dashboard analytics and reports -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Html5-QRCode: QR code scanner for admin check-in feature -->
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    <!-- GSAP: Animation engine for ReactBits components -->
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <!-- Supabase, Chart.js, HTML5-QRCode, and GSAP are now handled via npm in script.js -->
+
 </head>
 <body>
 <!-- ==========================================================================================
@@ -91,7 +85,7 @@
             <div class="form-container sign-up-container">
                 <div class="stepper-outer" id="signup-stepper">
                     <div class="login-inline-logo">
-                        <img src="Logo/ev.png" alt="Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <img src="/Logo/ev.png" alt="Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <div class="fallback-logo-inline" style="display: none;">EV</div>
                     </div>
                     <h2 style="margin-bottom: 0.25rem;">Create Account</h2>
@@ -192,7 +186,7 @@
                 <form id="login-form">
                     <!-- Logo Section -->
                     <div class="logo-wrapper">
-                        <img src="Logo/ev.png" alt="Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <img src="/Logo/ev.png" alt="Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         <!-- Fallback if image fails to load -->
                         <div class="fallback-logo" style="display: none;">EV</div>
                     </div>
@@ -875,8 +869,8 @@
     </div>
 
     <!-- React Bits Light Rays (WebGL + ogl) -->
-    <script type="module" src="lightrays-init.js"></script>
+    <script type="module" src="/lightrays-init.js"></script>
     <!-- MAIN APPLICATION SCRIPT - All functionality -->
-    <script src="script.js"></script>
+    <script type="module" src="/script.js"></script>
 </body>
 </html>

@@ -1,37 +1,9 @@
 // ================================================================================
-// EROVOUTIKA PORTAL - Main Application Logic
-// ================================================================================
-//
-// PROJECT OVERVIEW:
-// Dual-role web application (Admin & Student) for attendance tracking, 
-// portfolio management, and virtual ID generation with QR codes.
-//
-// KEY COMPONENTS:
-// 1. Authentication: Login/Signup for both admin and student roles
-// 2. Admin Dashboard: KPI tracking, roster management, QR scanning, reports
-// 3. Student Dashboard: Self check-in, schedule viewing, profile management
-// 4. Real-time Data Sync: Uses Supabase PostgreSQL database
-//
-// HOW TO ADD NEW FEATURES:
-// 1. UI: Add elements to Index.html (inputs, buttons, modals)
-// 2. Event Listeners: Create in script.js with addEventListener()
-// 3. Data Binding: Use supabase queries to read/write database
-// 4. Error Handling: Always use try-catch for async operations
-// 5. User Feedback: Use showToast() for notifications
-//
-// To add a new admin report:
-//   1. Create <canvas> element in Index.html (id="reportChart")
-//   2. Add data fetching logic in new function
-//   3. Create Chart.js instance in renderCharts()
-//   4. Add navigation item to sidebar
-//
-// To add a new student field (e.g., phone number):
-//   1. Add input field to student registration form
-//   2. Update signature insert object with new field
-//   3. Add phone column to 'employees' table in Supabase
-//   4. Display field in student profile section
-//
-// ================================================================================
+
+import { createClient } from '@supabase/supabase-js';
+import Chart from 'chart.js/auto';
+import { Html5QrcodeScanner } from 'html5-qrcode';
+import gsap from 'gsap';
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -89,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialize Supabase client
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // ==================== QR + SPOTLIGHT VIRTUAL ID HELPERS ====================
     const SPOTLIGHT_COLOR = 'rgba(0, 229, 255, 0.22)';
