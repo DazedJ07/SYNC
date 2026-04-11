@@ -562,9 +562,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const user = document.getElementById('username').value;
+        const identifier = document.getElementById('username').value.trim();
         const pass = document.getElementById('password').value;
-        const role = document.getElementById('login-admin').checked ? 'admin' : 'student';
         const btn = e.target.querySelector('button[type="submit"]');
         const errBox = document.getElementById('login-error');
 
@@ -572,14 +571,29 @@ document.addEventListener('DOMContentLoaded', () => {
         errBox.classList.add('hidden');
 
         try {
-            const res = role === 'admin'
-                ? await supabase.from('admins').select('*').eq('username', user).eq('password', pass).single()
-                : await supabase.from('employees').select('*').eq('username', user).eq('password', pass).single();
+            // 1. Try to find in admins table first (Flexible search: email, username, or admin_name)
+            let res = await supabase.from('admins')
+                .select('*')
+                .eq('password', pass)
+                .or(`email.eq."${identifier}",username.eq."${identifier}",admin_name.eq."${identifier}"`)
+                .maybeSingle();
+            
+            let role = 'admin';
 
-            if (res.error || !res.data) throw new Error('Account not found. Please check credentials.');
+            // 2. If not found, try employees table (Flexible search: email, username, or full_name)
+            if (!res.data) {
+                res = await supabase.from('employees')
+                    .select('*')
+                    .eq('password', pass)
+                    .or(`email.eq."${identifier}",username.eq."${identifier}",full_name.eq."${identifier}"`)
+                    .maybeSingle();
+                role = 'student';
+            }
+
+            if (!res.data) throw new Error('Account not found. Please check credentials.');
 
             const clientIp = await fetchClientIp();
-            const key = ipStorageKey(user, role);
+            const key = ipStorageKey(identifier, role);
             const prevIp = localStorage.getItem(key);
             const ipChanged = Boolean(clientIp && prevIp && prevIp !== clientIp);
             const hasEmail = Boolean(res.data.email && String(res.data.email).trim());
