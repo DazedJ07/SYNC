@@ -439,9 +439,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('auth-tab-signin')?.addEventListener('click', () => setAuthView(false));
     document.getElementById('auth-tab-signup')?.addEventListener('click', () => setAuthView(true));
 
-    function getOAuthRedirectTo() {
-        const env = String(import.meta.env.VITE_SITE_URL || '').trim();
-        if (env) return env.replace(/\/+$/, '');
+    function isLocalhostHostname(hostname) {
+        if (!hostname) return false;
+        const h = String(hostname).toLowerCase();
+        return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.local');
+    }
+
+    /** Current origin + path prefix (trailing slash) for OAuth / email redirects. */
+    function pathPrefixForRedirect() {
         try {
             const u = new URL(window.location.href);
             u.hash = '';
@@ -452,6 +457,39 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch {
             return `${window.location.origin}/`;
         }
+    }
+
+    /**
+     * Canonical public URL for this deployment (OAuth redirectTo, emailRedirectTo).
+     * If VITE_SITE_URL points at localhost but the app is opened on a real host (e.g. Vercel), we ignore the env
+     * so Google OAuth and email links do not send users back to localhost after login.
+     */
+    function getAppBaseUrl() {
+        const raw = String(import.meta.env.VITE_SITE_URL || '').trim();
+        const env = raw.replace(/\/+$/, '');
+        let hereHost = '';
+        try {
+            hereHost = new URL(window.location.href).hostname;
+        } catch {
+            hereHost = window.location.hostname || '';
+        }
+        const openedOnRemote = Boolean(hereHost) && !isLocalhostHostname(hereHost);
+
+        if (env) {
+            try {
+                const envUrl = env.includes('://') ? env : `https://${env}`;
+                const u = new URL(envUrl);
+                if (openedOnRemote && isLocalhostHostname(u.hostname)) return pathPrefixForRedirect();
+                return env.includes('://') ? env.replace(/\/+$/, '') : `https://${env.replace(/\/+$/, '')}`;
+            } catch {
+                return pathPrefixForRedirect();
+            }
+        }
+        return pathPrefixForRedirect();
+    }
+
+    function getOAuthRedirectTo() {
+        return getAppBaseUrl();
     }
 
     async function startGoogleOAuth(errorBoxId) {
@@ -648,7 +686,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const { error } = await supabase.auth.signInWithOtp({
             email,
-            options: { shouldCreateUser: true },
+            options: {
+                shouldCreateUser: true,
+                emailRedirectTo: getAppBaseUrl(),
+            },
         });
         if (error) throw new Error(error.message || 'Could not send verification email.');
 
@@ -869,7 +910,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const email = pendingLoginAfterOtp.data.email.trim();
         const { error } = await supabase.auth.signInWithOtp({
             email,
-            options: { shouldCreateUser: true },
+            options: {
+                shouldCreateUser: true,
+                emailRedirectTo: getAppBaseUrl(),
+            },
         });
         if (error) throw new Error(error.message || 'Could not send verification email.');
         lastLoginOtpSendAt = Date.now();
