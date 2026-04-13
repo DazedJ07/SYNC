@@ -2,10 +2,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 import Chart from 'chart.js/auto';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode';
 import gsap from 'gsap';
 import Papa from 'papaparse';
 import { jsPDF } from 'jspdf';
+import { initBorderGlowCards } from './border-glow-init.js';
+import { bindOtpSlotGroup, clearOtpSlots, bindDatePickerPopover } from './ui-widgets.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -18,9 +20,12 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem(THEME_KEY, t);
         } catch (e) { /* ignore */ }
         const loginLbl = document.getElementById('login-theme-label');
-        if (loginLbl) loginLbl.textContent = t === 'dark' ? 'Dark' : 'Light';
+        if (loginLbl) loginLbl.textContent = t === 'dark' ? 'Dark mode' : 'Light mode';
         document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
             btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+            if (btn.getAttribute('role') === 'switch') {
+                btn.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false');
+            }
         });
         document.dispatchEvent(new CustomEvent('syncorg-themechange', { detail: { theme: t } }));
     }
@@ -34,11 +39,18 @@ document.addEventListener('DOMContentLoaded', () => {
     (function syncInitialThemeUi() {
         const t = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
         const loginLbl = document.getElementById('login-theme-label');
-        if (loginLbl) loginLbl.textContent = t === 'dark' ? 'Dark' : 'Light';
+        if (loginLbl) loginLbl.textContent = t === 'dark' ? 'Dark mode' : 'Light mode';
         document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
             btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+            if (btn.getAttribute('role') === 'switch') {
+                btn.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false');
+            }
         });
     })();
+
+    bindOtpSlotGroup('#signup-otp-slots', 'reg-otp');
+    bindOtpSlotGroup('#login-otp-slots', 'login-otp-input');
+    bindDatePickerPopover('history-date-trigger', 'history-date-popover', 'history-date', 'history-date-label');
 
     // ==================== SUPABASE CONFIGURATION ====================
     // These credentials connect to your Supabase project
@@ -59,6 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const SUPABASE_URL = 'https://yhiqtdgoeuctpybvjbrc.supabase.co'; 
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InloaXF0ZGdvZXVjdHB5YnZqYnJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2MjIyOTMsImV4cCI6MjA5MTE5ODI5M30.4hjObsvtcrm5GRZ9MvA31xfgTqwHoalkuWa_5R9itrg';
+
+    /** Set `VITE_ORG_SECRET` in `.env` (see `.env.example`). Used when admins create an account. */
+    const ORG_SECRET = String(import.meta.env.VITE_ORG_SECRET || '2026').trim();
 
     // Supabase email OTP: Dashboard → Auth → Email Templates → Magic Link must include {{ .Token }} for 6-digit codes.
     const OTP_RESEND_COOLDOWN_MS = 45 * 1000;
@@ -95,6 +110,121 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize Supabase client
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function localDateStr(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    /**
+     * Today’s display status: uses optional `last_check_in_at` (add column in Supabase when ready).
+     * Same-day check-in before 8:30 → Present, after → Late; no check-in today → No Record; prior day without today → Absent.
+     */
+    function deriveDisplayStatus(emp, now = new Date()) {
+        if (emp.status === 'Excused') return 'Excused';
+        const today = localDateStr(now);
+        let last = null;
+        if (emp.last_check_in_at) {
+            last = new Date(emp.last_check_in_at);
+            if (Number.isNaN(last.getTime())) last = null;
+        }
+        if (last) {
+            const lastDay = localDateStr(last);
+            if (lastDay === today) {
+                const mins = last.getHours() * 60 + last.getMinutes();
+                return mins > 8 * 60 + 30 ? 'Late' : 'Present';
+            }
+            return 'Absent';
+        }
+        if (emp.status === 'Absent') return 'Absent';
+        if (emp.status === 'Present') return 'Present';
+        if (emp.status === 'Late') return 'Late';
+        return 'No Record';
+    }
+
+    function statusBadgeHtml(label) {
+        const map = {
+            Present: 'badge-status badge-status--present',
+            Late: 'badge-status badge-status--late',
+            Absent: 'badge-status badge-status--absent',
+            Excused: 'badge-status badge-status--excused',
+            'No Record': 'badge-status badge-status--norecord',
+        };
+        const cls = map[label] || map['No Record'];
+        return `<span class="${cls}">${label}</span>`;
+    }
+
+    async function upsertAttendanceDaily(employeeId, dayStr, status) {
+        try {
+            const { error } = await supabase.from('attendance_daily').upsert(
+                {
+                    employee_id: employeeId,
+                    day: dayStr,
+                    status,
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'employee_id,day' },
+            );
+            if (error && !/relation|does not exist|schema|permission/i.test(String(error.message || ''))) {
+                console.warn('attendance_daily:', error.message);
+            }
+        } catch (e) {
+            console.warn('attendance_daily upsert', e);
+        }
+    }
+
+    async function patchEmployee(id, fields) {
+        let attempt = { ...fields };
+        let { error } = await supabase.from('employees').update(attempt).eq('id', id);
+        if (error && Object.prototype.hasOwnProperty.call(attempt, 'last_check_in_at') && /last_check_in_at|column|schema/i.test(String(error.message || ''))) {
+            delete attempt.last_check_in_at;
+            ({ error } = await supabase.from('employees').update(attempt).eq('id', id));
+        }
+        if (!error) {
+            const { data: row } = await supabase.from('employees').select('*').eq('id', id).maybeSingle();
+            if (row) {
+                const merged = { ...row, ...attempt };
+                const disp = deriveDisplayStatus(merged, new Date());
+                await upsertAttendanceDaily(id, localDateStr(new Date()), disp);
+            }
+        }
+        return { error };
+    }
+
+    /** Aggregates `attendance_daily` for the monthly chart (last 6 calendar months). Returns null if unavailable. */
+    async function fetchMonthlyAttendanceFromSupabase() {
+        const start = new Date();
+        start.setMonth(start.getMonth() - 5);
+        start.setDate(1);
+        const fromStr = localDateStr(start);
+        const { data, error } = await supabase.from('attendance_daily').select('day,status').gte('day', fromStr);
+        if (error || !data || !data.length) return null;
+
+        const monthKeys = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            monthKeys.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleString(undefined, { month: 'short' }) });
+        }
+        const bucket = {};
+        monthKeys.forEach((m) => {
+            bucket[m.key] = { present: 0, late: 0, absent: 0, excused: 0 };
+        });
+        data.forEach((row) => {
+            const d = row.day ? String(row.day).slice(0, 10) : '';
+            if (!d) return;
+            const mk = d.slice(0, 7);
+            if (!bucket[mk]) return;
+            const st = row.status;
+            if (st === 'Present') bucket[mk].present += 1;
+            else if (st === 'Late') bucket[mk].late += 1;
+            else if (st === 'Absent') bucket[mk].absent += 1;
+            else if (st === 'Excused') bucket[mk].excused += 1;
+        });
+        return {
+            labels: monthKeys.map((m) => m.label),
+            series: monthKeys.map((m) => bucket[m.key]),
+        };
+    }
 
     /** After Google OAuth redirect: map Supabase user email → admins/employees row and open dashboard. */
     async function tryMapOAuthToPortal(session) {
@@ -238,48 +368,60 @@ document.addEventListener('DOMContentLoaded', () => {
     let activityFeedLogs = [];           // Array of activity feed entries for display
     let shiftInterval = null;            // Timer reference for real-time shift updates
     let calendarDate = new Date();       // Current date being viewed in calendar
-    let html5QrcodeScanner = null;       // QR scanner instance reference
+    let html5QrcodeScanner = null;       // QR scanner instance reference (desktop)
+    let html5QrCodeCamera = null;      // Html5Qrcode instance (mobile / back camera)
+    let qrScanProcessing = false;      // Avoid duplicate decode while marking attendance
 
     // ==================== UI LOGIN PAGE CONTROLS ====================
     // Manages switching between Sign In and Sign Up form views
     // Uses CSS transform to slide forms in/out
     
     const loginBox = document.getElementById('container');
-    
-    // Show Sign Up form when user clicks "Sign Up" button
-    document.getElementById('signUp').addEventListener('click', () => {
-        loginBox.classList.add("right-panel-active");
-    });
-    
-    // Show Sign In form when user clicks "Sign In" button
-    document.getElementById('signIn').addEventListener('click', () => {
-        loginBox.classList.remove("right-panel-active");
-    });
 
-    const loginGoogleBtn = document.getElementById('login-google-btn');
-    if (loginGoogleBtn) {
-        loginGoogleBtn.addEventListener('click', async () => {
-            const errBox = document.getElementById('login-error');
-            if (errBox) errBox.classList.add('hidden');
-            const redirectTo = `${window.location.origin}${window.location.pathname}`;
-            const { error } = await supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: { redirectTo },
-            });
-            if (error) {
-                if (errBox) {
-                    errBox.innerText = error.message || 'Google sign-in failed.';
-                    errBox.classList.remove('hidden');
-                }
-            }
-        });
+    function setAuthView(signup) {
+        const tabIn = document.getElementById('auth-tab-signin');
+        const tabUp = document.getElementById('auth-tab-signup');
+        const panelIn = document.getElementById('auth-panel-signin');
+        const panelUp = document.getElementById('auth-panel-signup');
+        if (tabIn) {
+            tabIn.classList.toggle('active', !signup);
+            tabIn.setAttribute('aria-selected', signup ? 'false' : 'true');
+        }
+        if (tabUp) {
+            tabUp.classList.toggle('active', !!signup);
+            tabUp.setAttribute('aria-selected', signup ? 'true' : 'false');
+        }
+        if (panelIn) panelIn.classList.toggle('hidden', !!signup);
+        if (panelUp) panelUp.classList.toggle('hidden', !signup);
+        if (loginBox) loginBox.classList.toggle('auth-mode-signup', !!signup);
     }
+
+    document.getElementById('auth-tab-signin')?.addEventListener('click', () => setAuthView(false));
+    document.getElementById('auth-tab-signup')?.addEventListener('click', () => setAuthView(true));
+
+    async function startGoogleOAuth(errorBoxId) {
+        const errBox = document.getElementById(errorBoxId);
+        if (errBox) errBox.classList.add('hidden');
+        const redirectTo = `${window.location.origin}${window.location.pathname}`;
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo },
+        });
+        if (error && errBox) {
+            errBox.innerText = error.message || 'Google sign-in failed.';
+            errBox.classList.remove('hidden');
+        }
+    }
+
+    document.getElementById('login-google-btn')?.addEventListener('click', () => startGoogleOAuth('login-error'));
+    document.getElementById('signup-google-btn')?.addEventListener('click', () => startGoogleOAuth('signup-error'));
 
     // ==================== ROLE-BASED FORM FIELD VISIBILITY ====================
     // Show/hide organization ID or student ID based on selected role
     const signupAdminRadio = document.getElementById('signup-admin');
     document.getElementById('signup-admin').addEventListener('change', updateSignupFields);
     document.getElementById('signup-student').addEventListener('change', updateSignupFields);
+    updateSignupFields();
 
     /**
      * Updates signup form visibility based on selected role
@@ -287,12 +429,15 @@ document.addEventListener('DOMContentLoaded', () => {
      * Student sees: Student/Employee ID field
      * */
     function updateSignupFields() {
+        const hint = document.getElementById('org-code-hint');
         if (signupAdminRadio.checked) {
-            document.getElementById('group-org-id').classList.remove('hidden');     // Show Org ID for admin
-            document.getElementById('group-student-id').classList.add('hidden');    // Hide Student ID
+            document.getElementById('group-org-id').classList.remove('hidden');
+            document.getElementById('group-student-id').classList.add('hidden');
+            if (hint) hint.classList.remove('hidden');
         } else {
-            document.getElementById('group-org-id').classList.add('hidden');        // Hide Org ID
-            document.getElementById('group-student-id').classList.remove('hidden'); // Show Student ID
+            document.getElementById('group-org-id').classList.add('hidden');
+            document.getElementById('group-student-id').classList.remove('hidden');
+            if (hint) hint.classList.add('hidden');
         }
     }
 
@@ -342,7 +487,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (backBtn) backBtn.classList.toggle('hidden', stepperCurrentStep === 1);
         if (navEl) navEl.className = `stepper-footer-nav ${stepperCurrentStep > 1 ? 'spread' : 'end'}`;
         if (nextBtn) nextBtn.innerText = stepperCurrentStep === STEPPER_TOTAL_STEPS ? 'Create account' : 'Next';
-        
+
+        const socialRow = document.getElementById('signup-social-row');
+        if (socialRow) socialRow.classList.toggle('hidden', stepperCurrentStep === STEPPER_TOTAL_STEPS);
+
         // Hide error on step change
         const errBox = document.getElementById('signup-error');
         if (errBox) errBox.classList.add('hidden');
@@ -354,7 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const isAdmin = signupAdminRadio.checked;
             if (isAdmin) {
                 const orgId = document.getElementById('reg-org-id').value.trim();
-                if (!orgId) { errBox.innerText = 'Please enter your Organization ID.'; errBox.classList.remove('hidden'); return false; }
+                if (!orgId) { errBox.innerText = 'Please enter your organization code.'; errBox.classList.remove('hidden'); return false; }
             } else {
                 const studentId = document.getElementById('reg-student-id').value.trim();
                 if (!studentId) { errBox.innerText = 'Please enter your Student ID.'; errBox.classList.remove('hidden'); return false; }
@@ -437,7 +585,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) throw new Error(error.message || 'Could not send verification email.');
 
         lastSignupOtpSendAt = Date.now();
-        pendingSignupPayload = { role, name, email, user, pass, orgId, empId };
+        const phoneRaw = document.getElementById('reg-phone')?.value?.trim() ?? '';
+        pendingSignupPayload = { role, name, email, user, pass, orgId, empId, phone: phoneRaw };
     }
 
     function validateOtpInputFormat() {
@@ -482,21 +631,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (vErr) throw new Error(vErr.message || 'Invalid or expired code.');
 
-            if (role === 'admin') {
+                if (role === 'admin') {
                 const orgId = d.orgId;
-                if (orgId !== '2026') throw new Error('Invalid Org ID.');
-                const { error } = await supabase.from('admins').insert([{ org_id: orgId, admin_name: name, email, username: user, password: pass }]);
+                if (orgId !== ORG_SECRET) throw new Error('Invalid organization code.');
+                const phoneVal = d.phone && String(d.phone).trim() !== '' ? String(d.phone).trim() : null;
+                const { error } = await supabase.from('admins').insert([{ org_id: orgId, admin_name: name, email, username: user, password: pass, phone: phoneVal }]);
                 if (error) throw error;
             } else {
                 const empIdVal = d.empId;
-                const { error } = await supabase.from('employees').insert([{ emp_id: empIdVal, full_name: name, email, department: 'Student', role: 'Student Employee', status: 'Absent', username: user, password: pass, shift_status: 'Off-Shift', shift_seconds: 0, batch: 'Batch 1', team: 'Unassigned', bio: '' }]);
+                const phoneVal = d.phone && String(d.phone).trim() !== '' ? String(d.phone).trim() : null;
+                const { error } = await supabase.from('employees').insert([{ emp_id: empIdVal, full_name: name, email, phone: phoneVal, department: 'Student', role: 'Student Employee', status: 'No Record', username: user, password: pass, shift_status: 'Off-Shift', shift_seconds: 0, batch: 'Batch 1', team: 'Unassigned', bio: '' }]);
                 if (error) throw error;
             }
 
             await supabase.auth.signOut();
 
             alert('Account created successfully!');
-            loginBox.classList.remove('right-panel-active');
+            setAuthView(false);
             pendingSignupPayload = null;
             stepperCurrentStep = 1;
             updateStepperUI();
@@ -505,10 +656,13 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('reg-username').value = '';
             document.getElementById('reg-password').value = '';
             document.getElementById('reg-org-id').value = '';
+            const regPhone = document.getElementById('reg-phone');
+            if (regPhone) regPhone.value = '';
             const studentIdEl = document.getElementById('reg-student-id');
             if (studentIdEl) studentIdEl.value = '';
             const otpEl = document.getElementById('reg-otp');
             if (otpEl) otpEl.value = '';
+            clearOtpSlots('#signup-otp-slots');
         } catch (err) {
             errBox.innerText = formatSignupDbError(err);
             errBox.classList.remove('hidden');
@@ -587,6 +741,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (stepperCurrentStep === 3) {
                     pendingSignupPayload = null;
                     supabase.auth.signOut().catch(() => {});
+                    clearOtpSlots('#signup-otp-slots');
+                    const h = document.getElementById('reg-otp');
+                    if (h) h.value = '';
                 }
                 stepperCurrentStep--;
                 updateStepperUI();
@@ -616,10 +773,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (visible) {
             loginOtpError.classList.add('hidden');
-            if (loginOtpInput) {
-                loginOtpInput.value = '';
-                loginOtpInput.focus();
-            }
+            clearOtpSlots('#login-otp-slots');
+            if (loginOtpInput) loginOtpInput.value = '';
+            const firstSlot = document.querySelector('#login-otp-slots .otp-slot');
+            if (firstSlot) firstSlot.focus();
         }
     }
 
@@ -821,7 +978,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Load and display profile picture
         // Falls back to default avatar if no custom image set
         const avatarSrc = currentUser.avatar_url && currentUser.avatar_url.trim() !== '' ? currentUser.avatar_url : 'https://i.pravatar.cc/150?img=11';
-        document.getElementById('nav-avatar').src = avatarSrc;
+        const navAvatar = document.getElementById('nav-avatar');
+        if (navAvatar) navAvatar.src = avatarSrc;
 
         document.getElementById('admin-nav').style.display = isAdm ? 'flex' : 'none';
         document.getElementById('student-nav').style.display = isAdm ? 'none' : 'flex';
@@ -867,8 +1025,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const isAdm = currentUser.accountType === 'admin';
         const name = isAdm ? currentUser.admin_name : currentUser.full_name;
-        const emoji = isAdm ? '👋' : '🎓';
-        const text = `Good ${tod}, ${name} ${emoji}`;
+        const text = `Good ${tod}, ${name}`;
         
         const targetId = isAdm ? 'admin-greeting-text' : 'student-greeting-text';
         const el = document.getElementById(targetId);
@@ -914,7 +1071,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetId = btn.getAttribute('data-target');
             document.getElementById(targetId).classList.remove('hidden');
 
-            if(targetId === 'section-dashboards') renderCharts();
+            if(targetId === 'section-dashboards') void renderCharts();
             if(targetId === 'section-shift') renderShifts();
             if(targetId === 'section-portfolio') renderPortfolio('All');
             if(targetId === 'section-calendar') simulateAdminHistory();
@@ -939,8 +1096,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Convert image to Base64 data URL
                 const base64Img = evt.target.result;
                 
-                // Update avatar in header immediately
-                document.getElementById('nav-avatar').src = base64Img;
+                const navAv = document.getElementById('nav-avatar');
+                if (navAv) navAv.src = base64Img;
                 
                 // If student, also update embedded virtual ID avatar
                 if(currentUser.accountType === 'student') {
@@ -1005,6 +1162,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('self-edit-name').value = currentUser.admin_name || '';
         document.getElementById('self-edit-user').value = currentUser.username || '';
         document.getElementById('self-edit-email').value = currentUser.email || '';
+        const sp = document.getElementById('self-edit-phone');
+        if (sp) sp.value = currentUser.phone != null ? String(currentUser.phone) : '';
         // Show modal
         document.getElementById('admin-self-edit-modal').classList.remove('hidden');
     });
@@ -1014,7 +1173,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const updates = {
             admin_name: document.getElementById('self-edit-name').value,
             username: document.getElementById('self-edit-user').value,
-            email: document.getElementById('self-edit-email').value
+            email: document.getElementById('self-edit-email').value,
+            phone: document.getElementById('self-edit-phone')?.value?.trim() || null,
         };
         
         // Update in Supabase
@@ -1053,30 +1213,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = document.getElementById('admin-roster-body');
         if(!tbody) return;
         tbody.innerHTML = '';
-        
-        // Add row for each employee
-        allEmployees.forEach(emp => {
-            // Style status text based on current status
-            const statusColor = emp.status === 'Present' ? 'text-success font-bold' : 'text-danger';
+        const now = new Date();
+
+        allEmployees.forEach((emp) => {
+            const disp = deriveDisplayStatus(emp, now);
             tbody.innerHTML += `
                 <tr>
                     <td><b>${emp.full_name}</b><br><small class="text-muted">${emp.emp_id}</small></td>
                     <td><b>${emp.department}</b><br><small class="text-muted">${emp.team || 'Unassigned'}</small></td>
-                    <td class="${statusColor}">${emp.status || 'Absent'}</td>
+                    <td>${statusBadgeHtml(disp)}</td>
                     <td><button class="btn-secondary text-xs p-2" onclick="openAdminEdit(${emp.id})">Edit</button></td>
                 </tr>
             `;
         });
-        
-        // Update KPI cards
+
         const kpiTotal = document.getElementById('kpi-total');
-        if(kpiTotal) kpiTotal.innerText = allEmployees.length;
-        
+        if (kpiTotal) kpiTotal.innerText = allEmployees.length;
+
+        const counts = { Present: 0, Late: 0, Absent: 0, Excused: 0, 'No Record': 0 };
+        allEmployees.forEach((e) => {
+            const d = deriveDisplayStatus(e, now);
+            if (counts[d] !== undefined) counts[d] += 1;
+        });
+
         const kpiPresent = document.getElementById('kpi-present');
-        if(kpiPresent) kpiPresent.innerText = allEmployees.filter(e => e.status === 'Present').length;
-        
+        if (kpiPresent) kpiPresent.innerText = counts.Present;
+        const kpiLate = document.getElementById('kpi-late');
+        if (kpiLate) kpiLate.innerText = counts.Late;
         const kpiAbsent = document.getElementById('kpi-absent');
-        if(kpiAbsent) kpiAbsent.innerText = allEmployees.filter(e => e.status === 'Absent' || e.status === 'Leave').length;
+        if (kpiAbsent) kpiAbsent.innerText = counts.Absent;
+        const kpiNo = document.getElementById('kpi-norecord');
+        if (kpiNo) kpiNo.innerText = counts['No Record'];
     }
 
     // ==================== OPEN STUDENT EDITOR MODAL ====================
@@ -1085,41 +1252,42 @@ document.addEventListener('DOMContentLoaded', () => {
     
     window.openAdminEdit = function(id) {
         const emp = allEmployees.find(e => e.id === id);
-        if(!emp) return;
-        
-        // Populate form fields
+        if (!emp) return;
         document.getElementById('edit-modal-id').value = emp.id;
         document.getElementById('edit-modal-empid').value = emp.emp_id;
         document.getElementById('edit-modal-name').value = emp.full_name;
-        document.getElementById('edit-modal-status').value = emp.status || 'Absent';
+        document.getElementById('edit-modal-status').value = emp.status || 'No Record';
         document.getElementById('edit-modal-dept').value = emp.department || 'Student';
         document.getElementById('edit-modal-batch').value = emp.batch || 'Batch 1';
         document.getElementById('edit-modal-team').value = emp.team || '';
-        
-        // Show modal
+        const phoneEl = document.getElementById('edit-modal-phone');
+        if (phoneEl) phoneEl.value = emp.phone != null ? String(emp.phone) : '';
         document.getElementById('admin-edit-modal').classList.remove('hidden');
-    }
+    };
 
-    // ==================== SAVE STUDENT EDITS ====================
-    // Saves changes made in student editor modal to Supabase
-    
     document.getElementById('admin-save-student-btn').addEventListener('click', async () => {
         const id = document.getElementById('edit-modal-id').value;
-        const updates = { 
-            emp_id: document.getElementById('edit-modal-empid').value, 
-            full_name: document.getElementById('edit-modal-name').value, 
+        const updates = {
+            emp_id: document.getElementById('edit-modal-empid').value,
+            full_name: document.getElementById('edit-modal-name').value,
             status: document.getElementById('edit-modal-status').value,
             department: document.getElementById('edit-modal-dept').value,
             batch: document.getElementById('edit-modal-batch').value,
-            team: document.getElementById('edit-modal-team').value
+            team: document.getElementById('edit-modal-team').value,
         };
-        
-        // Update in Supabase
-        await supabase.from('employees').update(updates).eq('id', id);
-        // Close modal and refresh display
+        const phoneIn = document.getElementById('edit-modal-phone');
+        if (phoneIn) updates.phone = phoneIn.value.trim() || null;
+        if (updates.status === 'No Record' || updates.status === 'Absent') {
+            updates.last_check_in_at = null;
+        }
+        const { error } = await patchEmployee(id, updates);
+        if (error) {
+            alert(error.message || 'Update failed');
+            return;
+        }
         document.getElementById('admin-edit-modal').classList.add('hidden');
-        loadAdminData(); 
-        showToast("Student updated!");
+        loadAdminData();
+        showToast('Student updated!');
     });
 
     // ==================== ADMIN QR CODE SCANNER ====================
@@ -1127,61 +1295,139 @@ document.addEventListener('DOMContentLoaded', () => {
     // Requires HTTPS or localhost to access camera
     // Scanned data must match student emp_id to mark them present
     
+    function isMobileQrContext() {
+        return window.innerWidth < 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    }
+
+    async function handleAdminQrDecoded(decodedText) {
+        if (qrScanProcessing) return;
+        if (decodedText == null || String(decodedText).trim() === '') return;
+        qrScanProcessing = true;
+        try {
+            const parsed = parseScannedAttendancePayload(decodedText);
+            if (parsed.error === 'expired') {
+                alert('This attendance QR has expired. Ask the student to wait for a fresh code on their dashboard.');
+                await closeScanner();
+                return;
+            }
+            if (parsed.error === 'bad_format') {
+                alert('Could not read this QR code.');
+                await closeScanner();
+                return;
+            }
+            const lookupId = parsed.empId;
+            const emp = allEmployees.find((e) => e.emp_id === lookupId);
+
+            if (emp) {
+                const now = new Date();
+                const mins = now.getHours() * 60 + now.getMinutes();
+                const st = mins > 8 * 60 + 30 ? 'Late' : 'Present';
+                const { error: upErr } = await patchEmployee(emp.id, {
+                    status: st,
+                    shift_status: 'On-Shift',
+                    last_check_in_at: now.toISOString(),
+                });
+                if (upErr) {
+                    alert(upErr.message || 'Update failed');
+                    await closeScanner();
+                    return;
+                }
+
+                showToast(`Verified: ${emp.full_name}`);
+                addFeedLog(emp.full_name, 'checked in via QR scanner');
+                loadAdminData();
+            } else {
+                alert(`Unknown QR (no employee for ID): ${lookupId}`);
+            }
+            await closeScanner();
+        } finally {
+            qrScanProcessing = false;
+        }
+    }
+
     const qrBtn = document.getElementById('admin-open-qr-btn');
     if (qrBtn) {
-        qrBtn.addEventListener('click', () => {
-            // Show scanner modal
+        qrBtn.addEventListener('click', async () => {
+            const readerEl = document.getElementById('reader');
+            if (readerEl) readerEl.innerHTML = '';
             document.getElementById('qr-modal').classList.remove('hidden');
-            
-            // Initialize Html5QRCode scanner
-            html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
-                fps: 10,                              // 10 frames per second
-                qrbox: { width: 250, height: 250 }   // Scan area size
-            }, false);
-            
-            // Render camera feed
-            html5QrcodeScanner.render(async (decodedText) => {
-                const parsed = parseScannedAttendancePayload(decodedText);
-                if (parsed.error === 'expired') {
-                    alert('This attendance QR has expired. Ask the student to wait for a fresh code on their dashboard.');
-                    closeScanner();
-                    return;
+
+            const mobile = isMobileQrContext();
+            const boxW = mobile ? Math.min(300, Math.max(200, window.innerWidth - 40)) : 250;
+
+            if (mobile) {
+                html5QrCodeCamera = new Html5Qrcode('reader');
+                const config = { fps: 10, qrbox: { width: boxW, height: boxW }, aspectRatio: 1.0 };
+                const cameraConfigs = [
+                    { facingMode: 'environment' },
+                    { facingMode: 'user' },
+                ];
+                let started = false;
+                for (let i = 0; i < cameraConfigs.length && !started; i++) {
+                    try {
+                        await html5QrCodeCamera.start(
+                            cameraConfigs[i],
+                            config,
+                            (text) => {
+                                void handleAdminQrDecoded(text);
+                            },
+                            () => {},
+                        );
+                        started = true;
+                    } catch (e) {
+                        try {
+                            await html5QrCodeCamera.stop();
+                        } catch (e0) { /* ignore */ }
+                        if (i === cameraConfigs.length - 1) {
+                            console.warn('QR camera start failed', e);
+                            alert('Could not start the camera. Allow camera access, use HTTPS, or try the file picker on this device.');
+                            await closeScanner();
+                        }
+                    }
                 }
-                if (parsed.error === 'bad_format') {
-                    alert('Could not read this QR code.');
-                    closeScanner();
-                    return;
-                }
-                const lookupId = parsed.empId;
-                const emp = allEmployees.find(e => e.emp_id === lookupId);
-                
-                if(emp) {
-                    await supabase.from('employees').update({ 
-                        status: 'Present', 
-                        shift_status: 'On-Shift' 
-                    }).eq('id', emp.id);
-                    
-                    showToast(`✅ Verified: ${emp.full_name}`);
-                    addFeedLog(emp.full_name, "checked in via Admin Scanner");
-                    loadAdminData();
-                } else {
-                    alert(`Unknown QR (no employee for ID): ${lookupId}`);
-                }
-                closeScanner();
-            }, (error) => {
-                // Handle scanner error silently
-            });
+            } else {
+                html5QrcodeScanner = new Html5QrcodeScanner('reader', {
+                    fps: 10,
+                    qrbox: { width: boxW, height: boxW },
+                    aspectRatio: 1,
+                }, false);
+                html5QrcodeScanner.render(
+                    (decodedText) => {
+                        void handleAdminQrDecoded(decodedText);
+                    },
+                    () => {},
+                );
+            }
         });
     }
 
     // ==================== CLOSE QR SCANNER ====================
-    function closeScanner() {
-        if(html5QrcodeScanner) html5QrcodeScanner.clear();
-        document.getElementById('qr-modal').classList.add('hidden');
+    async function closeScanner() {
+        if (html5QrCodeCamera) {
+            try {
+                await html5QrCodeCamera.stop();
+                html5QrCodeCamera.clear();
+            } catch (e) {
+                try {
+                    html5QrCodeCamera.clear();
+                } catch (e2) { /* ignore */ }
+            }
+            html5QrCodeCamera = null;
+        }
+        if (html5QrcodeScanner) {
+            try {
+                html5QrcodeScanner.clear();
+            } catch (e) { /* ignore */ }
+            html5QrcodeScanner = null;
+        }
+        const readerEl = document.getElementById('reader');
+        if (readerEl) readerEl.innerHTML = '';
+        const modal = document.getElementById('qr-modal');
+        if (modal) modal.classList.add('hidden');
     }
     
     const closeQrBtn = document.getElementById('close-qr-btn');
-    if(closeQrBtn) closeQrBtn.addEventListener('click', closeScanner);
+    if (closeQrBtn) closeQrBtn.addEventListener('click', () => void closeScanner());
 
     // ==================== GLOBAL SHIFT TIMER ====================
     // Updates work duration every 1 second for employees on-shift
@@ -1195,10 +1441,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Increment shift seconds every 1 second for on-shift employees
         shiftInterval = setInterval(() => {
             let updated = false;
-            allEmployees.forEach(e => {
-                // Only count time for present employees who are on-shift
-                if(e.status === 'Present' && e.shift_status === 'On-Shift') { 
-                    e.shift_seconds = (e.shift_seconds || 0) + 1; 
+            allEmployees.forEach((e) => {
+                const on = e.shift_status === 'On-Shift';
+                const d = deriveDisplayStatus(e);
+                if (on && (d === 'Present' || d === 'Late')) {
+                    e.shift_seconds = (e.shift_seconds || 0) + 1;
                     updated = true;
                 }
             });
@@ -1218,8 +1465,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!tbody) return;
         tbody.innerHTML = '';
         
-        // Show only present employees
-        allEmployees.filter(e => e.status === 'Present').forEach(emp => {
+        allEmployees.filter((e) => {
+            const d = deriveDisplayStatus(e);
+            return (d === 'Present' || d === 'Late') && e.shift_status === 'On-Shift';
+        }).forEach((emp) => {
             // Convert seconds to HH:MM:SS format
             const h = Math.floor(emp.shift_seconds / 3600).toString().padStart(2, '0');
             const m = Math.floor((emp.shift_seconds % 3600) / 60).toString().padStart(2, '0');
@@ -1253,14 +1502,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return; 
         }
 
-        // Generate record for each employee on selected date
-        allEmployees.forEach(emp => {
-            // If date is today, show actual status. Otherwise simulate random status
-            const isToday = (new Date().toISOString().split('T')[0] === dateInput);
-            const status = isToday ? (emp.status || 'Absent') : (Math.random() > 0.3 ? 'Present' : (Math.random() > 0.5 ? 'Late' : 'Absent'));
-            const statusColor = status === 'Present' ? 'text-success font-bold' : (status === 'Late' ? 'text-warning font-bold' : 'text-danger font-bold');
-            
-            tbody.innerHTML += `<tr><td><b>${emp.full_name}</b></td><td>${dateInput}</td><td class="${statusColor}">${status}</td></tr>`;
+        const todayStr = localDateStr(new Date());
+        allEmployees.forEach((emp) => {
+            let status;
+            if (dateInput === todayStr) {
+                status = deriveDisplayStatus(emp, new Date());
+            } else {
+                const r = Math.random();
+                if (r > 0.88) status = 'Excused';
+                else if (r > 0.55) status = 'Present';
+                else if (r > 0.35) status = 'Late';
+                else if (r > 0.15) status = 'Absent';
+                else status = 'No Record';
+            }
+            tbody.innerHTML += `<tr><td><b>${emp.full_name}</b></td><td>${dateInput}</td><td>${statusBadgeHtml(status)}</td></tr>`;
         });
     }
     
@@ -1317,7 +1572,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <img src="${safeAvatar}" style="width:60px; height:60px; border-radius:50%; object-fit:cover; margin-bottom:10px;">
                     <h4>${emp.full_name}</h4>
                     <p class="text-xs text-muted">${emp.department}</p>
-                    <p class="text-xs font-bold mt-2" style="color:var(--primary-color);">${emp.team || 'Unassigned'}</p>
+                    <p class="text-xs font-bold mt-2 text-muted">${emp.team || 'Unassigned'}</p>
                 </div>
             `;
         });
@@ -1336,11 +1591,19 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function renderCharts() {
+    async function renderCharts() {
         const { axis: chartAxisColor, grid: chartGridColor } = getChartThemeColors();
-        const presentCount = allEmployees.filter(e => e.status === 'Present').length;
-        const lateCount = allEmployees.filter(e => e.status === 'Late').length;
-        const absentCount = Math.max(0, allEmployees.length - presentCount - lateCount);
+        const now = new Date();
+        const c = { Present: 0, Late: 0, Absent: 0, Excused: 0, 'No Record': 0 };
+        allEmployees.forEach((e) => {
+            const d = deriveDisplayStatus(e, now);
+            if (c[d] !== undefined) c[d] += 1;
+        });
+        const presentCount = c.Present;
+        const lateCount = c.Late;
+        const absentCount = c.Absent;
+        const excusedCount = c.Excused;
+        const noRec = c['No Record'];
 
         const attCtx = document.getElementById('attendanceChart');
         if (attCtx) {
@@ -1352,8 +1615,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     labels: ['Team attendance'],
                     datasets: [
                         { label: 'Present', data: [presentCount], backgroundColor: '#22c55e', stack: 'a' },
-                        { label: 'Late', data: [lateCount], backgroundColor: '#ca8a04', stack: 'a' },
-                        { label: 'Absent', data: [absentCount], backgroundColor: '#b91c1c', stack: 'a' },
+                        { label: 'Late', data: [lateCount], backgroundColor: '#eab308', stack: 'a' },
+                        { label: 'Absent', data: [absentCount], backgroundColor: '#ef4444', stack: 'a' },
+                        { label: 'Excused', data: [excusedCount], backgroundColor: '#3b82f6', stack: 'a' },
+                        { label: 'No Record', data: [noRec], backgroundColor: '#71717a', stack: 'a' },
                     ],
                 },
                 options: {
@@ -1390,9 +1655,10 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             const labels = ['SOFTDEV', '3D DESIGN', 'Unassigned'];
             const keys = ['soft', '3d', 'other'];
-            const presentPer = keys.map((k) => allEmployees.filter((e) => inDept(e, k) && e.status === 'Present').length);
-            const latePer = keys.map((k) => allEmployees.filter((e) => inDept(e, k) && e.status === 'Late').length);
-            const absentPer = keys.map((k) => allEmployees.filter((e) => inDept(e, k) && e.status !== 'Present' && e.status !== 'Late').length);
+            const presentPer = keys.map((k) => allEmployees.filter((e) => inDept(e, k) && deriveDisplayStatus(e, now) === 'Present').length);
+            const latePer = keys.map((k) => allEmployees.filter((e) => inDept(e, k) && deriveDisplayStatus(e, now) === 'Late').length);
+            const absentPer = keys.map((k) => allEmployees.filter((e) => inDept(e, k) && deriveDisplayStatus(e, now) === 'Absent').length);
+            const excusedPer = keys.map((k) => allEmployees.filter((e) => inDept(e, k) && deriveDisplayStatus(e, now) === 'Excused').length);
 
             window.deptChart = new Chart(deptCtx.getContext('2d'), {
                 type: 'bar',
@@ -1400,8 +1666,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     labels,
                     datasets: [
                         { label: 'Present', data: presentPer, backgroundColor: '#22c55e', stack: 'd' },
-                        { label: 'Late', data: latePer, backgroundColor: '#ca8a04', stack: 'd' },
-                        { label: 'Absent', data: absentPer, backgroundColor: '#b91c1c', stack: 'd' },
+                        { label: 'Late', data: latePer, backgroundColor: '#eab308', stack: 'd' },
+                        { label: 'Absent', data: absentPer, backgroundColor: '#ef4444', stack: 'd' },
+                        { label: 'Excused', data: excusedPer, backgroundColor: '#3b82f6', stack: 'd' },
                     ],
                 },
                 options: {
@@ -1424,11 +1691,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
             });
         }
+
+        const monthlyCtx = document.getElementById('monthlyAttendanceChart');
+        if (monthlyCtx) {
+            if (window.monthlyAttChart) window.monthlyAttChart.destroy();
+            const remote = await fetchMonthlyAttendanceFromSupabase();
+            let monthLabels;
+            let rows;
+            if (remote) {
+                monthLabels = remote.labels;
+                rows = remote.series;
+            } else {
+                monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+                rows = [
+                    { present: 180, late: 15, absent: 5, excused: 10 },
+                    { present: 195, late: 10, absent: 8, excused: 2 },
+                    { present: 170, late: 25, absent: 12, excused: 7 },
+                    { present: 210, late: 5, absent: 3, excused: 4 },
+                    { present: 185, late: 20, absent: 10, excused: 5 },
+                    { present: 160, late: 30, absent: 15, excused: 12 },
+                ];
+            }
+            window.monthlyAttChart = new Chart(monthlyCtx.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: monthLabels,
+                    datasets: [
+                        { label: 'Present', data: rows.map((m) => m.present), backgroundColor: '#22c55e', borderRadius: 4 },
+                        { label: 'Late', data: rows.map((m) => m.late), backgroundColor: '#eab308', borderRadius: 4 },
+                        { label: 'Absent', data: rows.map((m) => m.absent), backgroundColor: '#ef4444', borderRadius: 4 },
+                        { label: 'Excused', data: rows.map((m) => m.excused), backgroundColor: '#3b82f6', borderRadius: 4 },
+                    ],
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: chartAxisColor, usePointStyle: true, padding: 16 } },
+                        tooltip: { mode: 'index', intersect: false },
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: chartAxisColor },
+                            grid: { display: false },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: chartAxisColor, precision: 0 },
+                            grid: { color: chartGridColor },
+                        },
+                    },
+                },
+            });
+        }
     }
 
     document.addEventListener('syncorg-themechange', () => {
         const sec = document.getElementById('section-dashboards');
-        if (sec && !sec.classList.contains('hidden')) renderCharts();
+        if (sec && !sec.classList.contains('hidden')) void renderCharts();
     });
 
     function sleep(ms) {
@@ -1440,13 +1759,14 @@ document.addEventListener('DOMContentLoaded', () => {
         expBtn.addEventListener('click', async () => {
             showToast('Generating CSV…', 5000);
             await sleep(320);
+            const now = new Date();
             const rows = allEmployees.map((emp) => ({
                 'Employee ID': emp.emp_id,
                 'Full Name': emp.full_name,
                 Department: emp.department,
                 Batch: emp.batch || 'Batch 1',
                 Team: emp.team || 'Unassigned',
-                Status: emp.status || 'Absent',
+                Status: deriveDisplayStatus(emp, now),
             }));
             const csv = Papa.unparse(rows);
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1514,15 +1834,19 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const elBio = document.getElementById('std-edit-bio');
         if(elBio) elBio.value = currentUser.bio || '';
+
+        const elPhone = document.getElementById('std-edit-phone');
+        if (elPhone) elPhone.value = currentUser.phone != null ? String(currentUser.phone) : '';
         
         const elShift = document.getElementById('std-shift-select');
         if(elShift) elShift.value = currentUser.shift_status || 'Off-Shift';
         
         // Update attendance status with color coding
         const stat = document.getElementById('std-current-status');
-        if(stat) {
-            stat.innerText = currentUser.status || 'Absent';
-            stat.className = currentUser.status === 'Present' ? 'text-2xl font-bold text-success' : 'text-2xl font-bold text-danger';
+        if (stat) {
+            const d = deriveDisplayStatus(currentUser);
+            stat.className = 'std-status-badge-wrap';
+            stat.innerHTML = statusBadgeHtml(d);
         }
 
         // 2. Virtual ID Tab - ID Card Display
@@ -1570,13 +1894,15 @@ document.addEventListener('DOMContentLoaded', () => {
         saveProfBtn.addEventListener('click', async () => {
             const nu = document.getElementById('std-edit-username').value;
             const nb = document.getElementById('std-edit-bio').value;
+            const np = document.getElementById('std-edit-phone')?.value?.trim() ?? '';
             
             // Update in Supabase
-            await supabase.from('employees').update({ username: nu, bio: nb }).eq('id', currentUser.id);
+            await supabase.from('employees').update({ username: nu, bio: nb, phone: np || null }).eq('id', currentUser.id);
             
             // Update local user object
             currentUser.username = nu; 
             currentUser.bio = nb;
+            currentUser.phone = np || null;
             
             showToast("Profile & Bio saved.");
             // Refresh virtual ID card immediately
@@ -1594,16 +1920,20 @@ document.addEventListener('DOMContentLoaded', () => {
         markBtn.addEventListener('click', async () => {
             try {
                 // Update status in database
-                const { error } = await supabase.from('employees').update({ 
-                    status: 'Present', 
-                    shift_status: 'On-Shift' 
-                }).eq('id', currentUser.id);
-                
-                if(error) throw error;
-                
-                // Update local state
-                currentUser.status = 'Present'; 
+                const now = new Date();
+                const mins = now.getHours() * 60 + now.getMinutes();
+                const st = mins > 8 * 60 + 30 ? 'Late' : 'Present';
+                const { error } = await patchEmployee(currentUser.id, {
+                    status: st,
+                    shift_status: 'On-Shift',
+                    last_check_in_at: now.toISOString(),
+                });
+
+                if (error) throw error;
+
+                currentUser.status = st;
                 currentUser.shift_status = 'On-Shift';
+                currentUser.last_check_in_at = now.toISOString();
                 
                 // Refresh UI
                 await loadStudentData();
@@ -1664,7 +1994,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (batch === 'Batch 1') isOnline = (index % 2 !== 0); 
             if (batch === 'Batch 2') isOnline = (index % 2 === 0); 
             const mode = isOnline ? 'Online' : 'Face to Face';
-            const badgeClass = isOnline ? 'text-primary' : 'text-success';
+            const badgeClass = isOnline ? 'text-muted' : 'text-success';
             grid.innerHTML += `<div class="card p-4 text-center"><h4 class="mb-2">${day}</h4><p class="text-xs text-muted mb-2">08:00 AM - 06:00 PM</p><span class="font-bold ${badgeClass}">${mode}</span></div>`;
         });
     }
@@ -1685,7 +2015,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <img src="${emp.avatar_url || 'https://i.pravatar.cc/150?img=11'}" style="width:60px; height:60px; border-radius:50%; object-fit:cover; margin-bottom:10px;">
                     <h4>${emp.full_name}</h4>
                     <p class="text-xs text-muted mb-2">${emp.department}</p>
-                    <span class="badge bg-light text-primary border-color" style="border: 1px solid;">${emp.team || 'Unassigned'}</span>
+                    <span class="badge bg-light text-muted border-color" style="border: 1px solid;">${emp.team || 'Unassigned'}</span>
                 </div>
             `;
         });
@@ -1769,30 +2099,53 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ================================ REACTBITS COMPONENT ENGINES ================================
-    // Login Light Rays background: see lightrays-init.js (WebGL + ogl, matches React Bits LightRays).
+    // Login + dashboard background: React Bits ColorBends (src/color-bends-react.jsx).
 
     // ==================== MAGIC BENTO - Interactive Dashboard Cards ====================
-    // Adds spotlight glow, particles, and border glow to dashboard cards
+    // Global spotlight + BorderGlow-style edge highlight (see border-glow-init.js)
     
     const BENTO_GLOW_COLOR = '59, 130, 246';
     const BENTO_SPOTLIGHT_RADIUS = 400;
-    const BENTO_PARTICLE_COUNT = 12;
-    
+
     function initMagicBento() {
-        // Find all dashboard cards and apply MagicBento classes
         const cards = document.querySelectorAll('.card, .kpi-card');
-        cards.forEach(card => {
+        cards.forEach((card) => {
             if (!card.classList.contains('magic-bento-card')) {
-                card.classList.add('magic-bento-card', 'magic-bento-card--border-glow');
+                card.classList.add('magic-bento-card');
                 card.style.setProperty('--glow-color', BENTO_GLOW_COLOR);
             }
         });
-        
-        // Setup global spotlight
         setupBentoSpotlight();
-        
-        // Setup particle effects on hover
-        setupBentoParticles();
+        initBorderGlowCards();
+        setupBentoRipples();
+    }
+
+    function setupBentoRipples() {
+        document.querySelectorAll('.magic-bento-card .border-glow-inner').forEach((inner) => {
+            const card = inner.closest('.magic-bento-card');
+            if (!card || card._bentoRipple) return;
+            card._bentoRipple = true;
+            inner.style.position = 'relative';
+            inner.addEventListener('click', (e) => {
+                const rect = inner.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const maxDistance = Math.max(
+                    Math.hypot(x, y),
+                    Math.hypot(x - rect.width, y),
+                    Math.hypot(x, y - rect.height),
+                    Math.hypot(x - rect.width, y - rect.height)
+                );
+                const ripple = document.createElement('div');
+                ripple.style.cssText = `position:absolute;width:${maxDistance * 2}px;height:${maxDistance * 2}px;border-radius:50%;background:radial-gradient(circle,rgba(${BENTO_GLOW_COLOR},0.35) 0%,rgba(${BENTO_GLOW_COLOR},0.15) 30%,transparent 70%);left:${x - maxDistance}px;top:${y - maxDistance}px;pointer-events:none;z-index:50;`;
+                inner.appendChild(ripple);
+                if (typeof gsap !== 'undefined') {
+                    gsap.fromTo(ripple, { scale: 0, opacity: 1 }, { scale: 1, opacity: 0, duration: 0.8, ease: 'power2.out', onComplete: () => ripple.remove() });
+                } else {
+                    setTimeout(() => ripple.remove(), 800);
+                }
+            });
+        });
     }
     
     function setupBentoSpotlight() {
@@ -1858,74 +2211,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
-    function setupBentoParticles() {
-        document.querySelectorAll('.magic-bento-card').forEach(card => {
-            if (card._bentoSetup) return;
-            card._bentoSetup = true;
-            
-            let particles = [];
-            let timeouts = [];
-            
-            card.addEventListener('mouseenter', () => {
-                const rect = card.getBoundingClientRect();
-                for (let i = 0; i < BENTO_PARTICLE_COUNT; i++) {
-                    const tid = setTimeout(() => {
-                        const particle = document.createElement('div');
-                        particle.className = 'bento-particle';
-                        particle.style.left = Math.random() * rect.width + 'px';
-                        particle.style.top = Math.random() * rect.height + 'px';
-                        particle.style.background = `rgba(${BENTO_GLOW_COLOR}, 1)`;
-                        particle.style.boxShadow = `0 0 6px rgba(${BENTO_GLOW_COLOR}, 0.6)`;
-                        card.appendChild(particle);
-                        particles.push(particle);
-                        
-                        if (typeof gsap !== 'undefined') {
-                            gsap.fromTo(particle, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'back.out(1.7)' });
-                            gsap.to(particle, { x: (Math.random() - 0.5) * 100, y: (Math.random() - 0.5) * 100, rotation: Math.random() * 360, duration: 2 + Math.random() * 2, ease: 'none', repeat: -1, yoyo: true });
-                            gsap.to(particle, { opacity: 0.3, duration: 1.5, ease: 'power2.inOut', repeat: -1, yoyo: true });
-                        }
-                    }, i * 100);
-                    timeouts.push(tid);
-                }
-            });
-            
-            card.addEventListener('mouseleave', () => {
-                timeouts.forEach(clearTimeout);
-                timeouts = [];
-                particles.forEach(p => {
-                    if (typeof gsap !== 'undefined') {
-                        gsap.to(p, { scale: 0, opacity: 0, duration: 0.3, ease: 'back.in(1.7)', onComplete: () => p.remove() });
-                    } else {
-                        p.remove();
-                    }
-                });
-                particles = [];
-            });
-            
-            // Click ripple effect
-            card.addEventListener('click', (e) => {
-                const rect = card.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                const maxDistance = Math.max(
-                    Math.hypot(x, y),
-                    Math.hypot(x - rect.width, y),
-                    Math.hypot(x, y - rect.height),
-                    Math.hypot(x - rect.width, y - rect.height)
-                );
-                
-                const ripple = document.createElement('div');
-                ripple.style.cssText = `position: absolute; width: ${maxDistance * 2}px; height: ${maxDistance * 2}px; border-radius: 50%; background: radial-gradient(circle, rgba(${BENTO_GLOW_COLOR}, 0.4) 0%, rgba(${BENTO_GLOW_COLOR}, 0.2) 30%, transparent 70%); left: ${x - maxDistance}px; top: ${y - maxDistance}px; pointer-events: none; z-index: 1000;`;
-                card.appendChild(ripple);
-                
-                if (typeof gsap !== 'undefined') {
-                    gsap.fromTo(ripple, { scale: 0, opacity: 1 }, { scale: 1, opacity: 0, duration: 0.8, ease: 'power2.out', onComplete: () => ripple.remove() });
-                } else {
-                    setTimeout(() => ripple.remove(), 800);
-                }
-            });
-        });
-    }
 
 });
+

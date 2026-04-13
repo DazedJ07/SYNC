@@ -53,6 +53,7 @@
     </script>
     <!-- STYLESHEETS & FONTS -->
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/border-glow.css">
     <!-- Material Design Icons - Used throughout the app -->
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
     <!-- Google Inter Font - Clean, modern typeface -->
@@ -71,194 +72,168 @@
 
     <div id="login-page" class="view-active login-page-wrap">
         <div class="login-theme-corner">
-            <span class="theme-switch-label" id="login-theme-label">Dark</span>
-            <button type="button" class="theme-switch" data-theme-toggle aria-label="Switch theme"></button>
+            <span class="theme-switch-label" id="login-theme-label">Dark mode</span>
+            <button type="button" class="theme-switch-ui" data-theme-toggle role="switch" aria-checked="true" aria-label="Toggle dark mode">
+                <span class="theme-switch-ui-track" aria-hidden="true"></span>
+                <span class="theme-switch-ui-thumb" aria-hidden="true"></span>
+            </button>
         </div>
-        <div class="login-bg"></div>
-        <div id="lightrays-root" class="login-lightrays" aria-hidden="true"></div>
+        <div class="login-bg login-bg-mesh"></div>
+        <div id="color-bends-root" class="login-color-bends" aria-hidden="true"></div>
         <div class="login-page-center">
-        <div class="glass-login-container" id="container">
-            
-            <!-- ===============================
-                SIGN UP FORM - Register new admin or student account
-                Feature: Toggle between Admin/Student roles
-                Admin requires: Organization ID (hardcoded as '2026')
-                Student requires: Employee/Student ID (format: EV-XXX)
-                
-                TO ADD NEW FIELDS:
-                1. Add input element in this form
-                2. Get value in script.js signup event listener
-                3. Add to Supabase insert object for 'admins' or 'employees' table
-                
-                EXAMPLE: To add phone number field:
-                <div class="input-group">
-                    <span class="material-symbols-outlined input-icon">phone</span>
-                    <input type="tel" id="reg-phone" placeholder="Phone Number">
+        <div class="auth-card" id="container">
+            <div class="auth-card-brand">
+                <div class="auth-brand-logo">
+                    <img src="/Logo/ev.png" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="auth-brand-fallback" style="display: none;">EV</div>
                 </div>
-                Then in script.js: const phone = document.getElementById('reg-phone').value;
-                ================================= -->
-            <div class="form-container sign-up-container">
-                <div class="stepper-outer" id="signup-stepper">
-                    <div class="login-inline-logo">
-                        <img src="/Logo/ev.png" alt="Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                        <div class="fallback-logo-inline" style="display: none;">EV</div>
-                    </div>
-                    <h2 style="margin-bottom: 0.25rem;">Create Account</h2>
-                    <p style="margin-bottom: 1rem; font-size: 13px;">Set up your portal access</p>
+                <h1 class="auth-brand-title">SYNC.org</h1>
+                <p class="auth-brand-sub">Attendance &amp; portfolio portal</p>
+            </div>
 
-                    <!-- Step Indicators -->
-                    <div class="stepper-indicator-row" id="stepper-indicators">
-                        <div class="step-indicator" data-step="1">
-                            <div class="step-indicator-inner active"><div class="step-active-dot"></div></div>
-                        </div>
-                        <div class="step-connector"><div class="step-connector-fill" id="conn-1-2"></div></div>
-                        <div class="step-indicator" data-step="2">
-                            <div class="step-indicator-inner inactive"><span class="step-number">2</span></div>
-                        </div>
-                        <div class="step-connector"><div class="step-connector-fill" id="conn-2-3"></div></div>
-                        <div class="step-indicator" data-step="3">
-                            <div class="step-indicator-inner inactive"><span class="step-number">3</span></div>
-                        </div>
-                    </div>
+            <div class="auth-tabs" role="tablist" aria-label="Sign in or create account">
+                <button type="button" class="auth-tab active" id="auth-tab-signin" role="tab" aria-selected="true" aria-controls="auth-panel-signin">Sign in</button>
+                <button type="button" class="auth-tab" id="auth-tab-signup" role="tab" aria-selected="false" aria-controls="auth-panel-signup">Create account</button>
+            </div>
 
-                    <!-- Error Message -->
-                    <div id="signup-error" class="error-msg hidden" style="margin-bottom: 0.75rem;"></div>
-
-                    <!-- Step 1: Choose Role -->
-                    <div class="stepper-step" id="stepper-step-1">
-                        <p style="font-size: 14px; margin-bottom: 1rem; text-align: center;">I am registering as a...</p>
-                        <div class="role-toggle mb-4">
-                            <input type="radio" id="signup-admin" name="signup-role" value="admin" checked>
-                            <label for="signup-admin">Admin</label>
-                            <input type="radio" id="signup-student" name="signup-role" value="student">
-                            <label for="signup-student">Student</label>
-                        </div>
-                        <!-- Org ID (Admin only) -->
-                        <div class="input-group" id="group-org-id">
-                            <span class="material-symbols-outlined input-icon">badge</span>
-                            <input type="text" id="reg-org-id" placeholder="Organization ID (Try 2026)">
-                        </div>
-                        <!-- Student ID -->
-                        <div class="input-group hidden" id="group-student-id">
-                            <span class="material-symbols-outlined input-icon">badge</span>
-                            <input type="text" id="reg-student-id" placeholder="Student ID (e.g. EV-001)">
-                        </div>
-                    </div>
-
-                    <!-- Step 2: Enter Details -->
-                    <div class="stepper-step hidden" id="stepper-step-2">
-                        <p style="font-size: 14px; margin-bottom: 1rem; text-align: center;">Enter your details</p>
-                        <div class="input-group">
-                            <span class="material-symbols-outlined input-icon">person</span>
-                            <input type="text" id="reg-name" placeholder="Full Name" required>
-                        </div>
-                        <div class="input-group">
+            <div class="auth-panels">
+                <div class="auth-panel" id="auth-panel-signin" role="tabpanel" aria-labelledby="auth-tab-signin">
+                    <form id="login-form" class="auth-form">
+                        <div id="login-error" class="error-msg hidden"></div>
+                        <label class="auth-field-label" for="username">Email, username, or full name</label>
+                        <div class="input-group auth-input-tight">
                             <span class="material-symbols-outlined input-icon">account_circle</span>
-                            <input type="text" id="reg-username" placeholder="Username" required>
+                            <input type="text" id="username" autocomplete="username" placeholder="you@example.com" required>
                         </div>
-                        <div class="input-group">
-                            <span class="material-symbols-outlined input-icon">mail</span>
-                            <input type="email" id="reg-email" placeholder="Email Address" required>
-                        </div>
-                        <div class="input-group">
+                        <label class="auth-field-label" for="password">Password</label>
+                        <div class="input-group auth-input-tight">
                             <span class="material-symbols-outlined input-icon">lock</span>
-                            <input type="password" id="reg-password" placeholder="Password" required>
+                            <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" required>
                         </div>
-                    </div>
+                        <button type="submit" class="btn-auth-primary w-full">Sign in</button>
+                        <div class="auth-divider"><span>or</span></div>
+                        <button type="button" class="btn-google w-full flex align-center justify-center" id="login-google-btn" aria-label="Sign in with Google">
+                            <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.197 0-9.61-3.318-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+                            Continue with Google
+                        </button>
+                    </form>
 
-                    <!-- Step 3: Email OTP verification -->
-                    <div class="stepper-step hidden" id="stepper-step-3">
-                        <p class="signup-otp-intro">We sent a verification code to<br><strong id="otp-email-display" class="signup-otp-email"></strong></p>
-                        <div class="input-group">
-                            <span class="material-symbols-outlined input-icon">pin</span>
-                            <input type="text" id="reg-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Enter 6-digit code">
+                    <div id="login-otp-panel" class="login-otp-panel hidden" aria-live="polite">
+                        <p class="login-otp-title">Verify it is you</p>
+                        <p class="login-otp-hint">Your network changed since last sign-in. Enter the code sent to <strong id="login-otp-email-display"></strong></p>
+                        <input type="hidden" id="login-otp-input" value="" autocomplete="one-time-code">
+                        <div class="otp-slot-wrap" id="login-otp-slots" role="group" aria-label="One-time code">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 1">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 2">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 3">
+                            <span class="otp-separator" aria-hidden="true"></span>
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 4">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 5">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 6">
                         </div>
-                        <p class="text-muted text-xs text-center mb-2 signup-otp-hint">Check your inbox (and spam). Use the code from Supabase Auth email.</p>
-                        <button type="button" class="otp-resend-btn" id="signup-resend-otp">Resend code</button>
-                    </div>
-
-                    <!-- Stepper Navigation -->
-                    <div class="stepper-footer">
-                        <div class="stepper-footer-nav end" id="stepper-nav">
-                            <button type="button" class="stepper-back-btn hidden" id="stepper-back-btn">Previous</button>
-                            <button type="button" class="stepper-next-btn" id="stepper-next-btn">Next</button>
-                        </div>
+                        <div id="login-otp-error" class="error-msg hidden"></div>
+                        <button type="button" class="btn-auth-primary w-full mt-2" id="login-otp-verify-btn">Verify code</button>
+                        <button type="button" class="otp-resend-btn" id="login-otp-resend-btn">Resend code</button>
+                        <button type="button" class="login-otp-cancel" id="login-otp-cancel-btn">Cancel</button>
                     </div>
                 </div>
-            </div>
-            
-            <!-- ===============================
-                SIGN IN FORM - Login with existing credentials
-                Supports role-based login (Admin or Student)
-                Validates username/password against database
-                
-                TO ADD NEW LOGIN FEATURES:
-                1. "Remember Me" checkbox - Add remember-me input & localStorage in script.js
-                2. "Forgot Password" link - Implement email-based password reset
-                3. 2FA - Add second factor authentication after initial login
-                ================================= -->
-            <div class="form-container sign-in-container">
-                <form id="login-form">
-                    <!-- Logo Section -->
-                    <div class="logo-wrapper">
-                        <img src="/Logo/ev.png" alt="Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                        <!-- Fallback if image fails to load -->
-                        <div class="fallback-logo" style="display: none;">EV</div>
-                    </div>
-                    <h2>Welcome Back</h2>
-                    <p class="text-muted mb-4">Sign in to the portal</p>
 
+                <div class="auth-panel hidden" id="auth-panel-signup" role="tabpanel" aria-labelledby="auth-tab-signup">
+                    <div class="signup-scroll">
+                        <div class="stepper-outer" id="signup-stepper">
+                            <h2 class="auth-signup-heading">Create account</h2>
+                            <p class="auth-signup-lead">Admin or student — three quick steps</p>
 
+                            <div class="stepper-indicator-row" id="stepper-indicators">
+                                <div class="step-indicator" data-step="1">
+                                    <div class="step-indicator-inner active"><div class="step-active-dot"></div></div>
+                                </div>
+                                <div class="step-connector"><div class="step-connector-fill" id="conn-1-2"></div></div>
+                                <div class="step-indicator" data-step="2">
+                                    <div class="step-indicator-inner inactive"><span class="step-number">2</span></div>
+                                </div>
+                                <div class="step-connector"><div class="step-connector-fill" id="conn-2-3"></div></div>
+                                <div class="step-indicator" data-step="3">
+                                    <div class="step-indicator-inner inactive"><span class="step-number">3</span></div>
+                                </div>
+                            </div>
 
-                    <!-- Error Message -->
-                    <div id="login-error" class="error-msg hidden"></div>
-                    
-                    <!-- Login Credentials -->
-                    <div class="input-group">
-                        <span class="material-symbols-outlined input-icon">account_circle</span>
-                        <input type="text" id="username" placeholder="Email, Username or Full Name" required>
-                    </div>
-                    <div class="input-group">
-                        <span class="material-symbols-outlined input-icon">lock</span>
-                        <input type="password" id="password" placeholder="Password" required>
-                    </div>
-                    <button type="submit" class="btn-primary w-full mt-2">Log In</button>
-                    <button type="button" class="btn-google w-full flex align-center justify-center" id="login-google-btn" aria-label="Sign in with Google">
-                        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.197 0-9.61-3.318-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
-                        Continue with Google
-                    </button>
-                </form>
+                            <div id="signup-error" class="error-msg hidden signup-error-slot"></div>
 
-                <!-- Shown when password is valid but client IP changed since last login -->
-                <div id="login-otp-panel" class="login-otp-panel hidden" aria-live="polite">
-                    <p class="login-otp-title">Verify it is you</p>
-                    <p class="login-otp-hint">Your network changed since last sign-in. Enter the code sent to <strong id="login-otp-email-display"></strong></p>
-                    <div class="input-group">
-                        <span class="material-symbols-outlined input-icon">pin</span>
-                        <input type="text" id="login-otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6-digit code">
-                    </div>
-                    <div id="login-otp-error" class="error-msg hidden"></div>
-                    <button type="button" class="btn-primary w-full mt-2" id="login-otp-verify-btn">Verify code</button>
-                    <button type="button" class="otp-resend-btn" id="login-otp-resend-btn">Resend code</button>
-                    <button type="button" class="login-otp-cancel" id="login-otp-cancel-btn">Cancel</button>
-                </div>
-            </div>
-            
-            <!-- ===============================
-                OVERLAY PANEL - Visual UI for toggling between Sign In and Sign Up
-                Animated overlay guides users between forms
-                ================================= -->
-            <div class="overlay-container">
-                <div class="overlay">
-                    <div class="overlay-panel overlay-left">
-                        <h2>Have an account?</h2>
-                        <p>Sign in with your credentials to access the portal.</p>
-                        <button class="ghost mt-4" id="signIn">Sign In</button>
-                    </div>
-                    <div class="overlay-panel overlay-right">
-                        <h2>New Here?</h2>
-                        <p>Register as an Admin or Student to get started.</p>
-                        <button class="ghost mt-4" id="signUp">Sign Up</button>
+                            <div class="stepper-step" id="stepper-step-1">
+                                <p class="auth-step-title">I am registering as a…</p>
+                                <div class="role-toggle mb-4">
+                                    <input type="radio" id="signup-admin" name="signup-role" value="admin" checked>
+                                    <label for="signup-admin">Admin</label>
+                                    <input type="radio" id="signup-student" name="signup-role" value="student">
+                                    <label for="signup-student">Student</label>
+                                </div>
+                                <div class="input-group" id="group-org-id">
+                                    <span class="material-symbols-outlined input-icon">vpn_key</span>
+                                    <input type="password" id="reg-org-id" placeholder="Organization code" autocomplete="new-password" spellcheck="false">
+                                </div>
+                                <div class="input-group hidden" id="group-student-id">
+                                    <span class="material-symbols-outlined input-icon">badge</span>
+                                    <input type="text" id="reg-student-id" placeholder="Student ID (e.g. EV-001)">
+                                </div>
+                                <p class="auth-hint auth-hint-admin" id="org-code-hint">Admins: enter the organization passphrase (typed as hidden). Configure <code class="font-mono text-xs">VITE_ORG_SECRET</code> in your env for production.</p>
+                            </div>
+
+                            <div class="stepper-step hidden" id="stepper-step-2">
+                                <p class="auth-step-title">Your details</p>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">person</span>
+                                    <input type="text" id="reg-name" placeholder="Full name" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">account_circle</span>
+                                    <input type="text" id="reg-username" placeholder="Username" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">mail</span>
+                                    <input type="email" id="reg-email" placeholder="Email" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">lock</span>
+                                    <input type="password" id="reg-password" placeholder="Password" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">call</span>
+                                    <input type="tel" id="reg-phone" placeholder="Phone (optional)" autocomplete="tel">
+                                </div>
+                            </div>
+
+                            <div class="stepper-step hidden" id="stepper-step-3">
+                                <p class="signup-otp-intro">We sent a verification code to<br><strong id="otp-email-display" class="signup-otp-email"></strong></p>
+                                <input type="hidden" id="reg-otp" value="" autocomplete="one-time-code">
+                                <div class="otp-slot-wrap" id="signup-otp-slots" role="group" aria-label="Verification code">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 1">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 2">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 3">
+                                    <span class="otp-separator" aria-hidden="true"></span>
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 4">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 5">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 6">
+                                </div>
+                                <p class="text-muted text-xs text-center mb-2 signup-otp-hint">Check your inbox (and spam). Use the code from Supabase Auth email.</p>
+                                <button type="button" class="otp-resend-btn" id="signup-resend-otp">Resend code</button>
+                            </div>
+
+                            <div id="signup-social-row" class="signup-social-row">
+                                <div class="auth-divider"><span>or</span></div>
+                                <button type="button" class="btn-google w-full flex align-center justify-center" id="signup-google-btn" aria-label="Continue with Google">
+                                    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.197 0-9.61-3.318-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+                                    Continue with Google
+                                </button>
+                            </div>
+
+                            <div class="stepper-footer">
+                                <div class="stepper-footer-nav end" id="stepper-nav">
+                                    <button type="button" class="stepper-back-btn hidden" id="stepper-back-btn">Back</button>
+                                    <button type="button" class="stepper-next-btn" id="stepper-next-btn">Next</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -267,7 +242,7 @@
     </div>
 
     <div id="app-page" class="hidden app-layout">
-        
+        <div id="app-color-bends-root" class="app-color-bends-layer" aria-hidden="true"></div>
         <!-- TOP NAVIGATION BAR -->
         <nav class="top-navbar">
             <div class="navbar-left">
@@ -321,13 +296,16 @@
             </div>
             
             <div class="navbar-right">
-                <button type="button" class="theme-switch" data-theme-toggle aria-label="Switch theme" title="Light / Dark"></button>
+                <button type="button" class="theme-switch-ui theme-switch-ui--nav" data-theme-toggle role="switch" aria-checked="true" aria-label="Toggle dark mode" title="Light / Dark">
+                    <span class="theme-switch-ui-track" aria-hidden="true"></span>
+                    <span class="theme-switch-ui-thumb" aria-hidden="true"></span>
+                </button>
                 <button id="admin-edit-self-btn" class="icon-btn-text hidden" title="Edit Admin Profile">
                     <span class="material-symbols-outlined">settings</span>
                 </button>
                 <span id="nav-user-name" class="navbar-username">User Name</span>
-                <div class="avatar-upload-wrapper" onclick="document.getElementById('profile-upload').click()" title="Change Profile Picture">
-                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile" class="avatar-sm cursor-pointer" id="nav-avatar">
+                <div class="avatar-upload-wrapper" onclick="document.getElementById('profile-upload').click()" title="Change profile picture">
+                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile" class="avatar-sm cursor-pointer" id="nav-avatar" width="36" height="36">
                     <div class="avatar-overlay"><span class="material-symbols-outlined text-xs">edit</span></div>
                 </div>
                 <input type="file" id="profile-upload" accept="image/*" class="hidden">
@@ -358,11 +336,11 @@
                     ================================= -->
                 <div id="section-home" class="view-section admin-view">
                     <div class="page-header">
-                        <h1 class="greeting" id="admin-greeting-text">Dashboard Overview</h1>
+                        <h1 class="greeting typo-h1" id="admin-greeting-text">Dashboard Overview</h1>
                     </div>
                     
                     <!-- KEY PERFORMANCE INDICATORS (KPIs) -->
-                    <div class="kpi-grid">
+                    <div class="kpi-grid kpi-grid-5 kpi-bento">
                         <div class="kpi-card">
                             <p>Total Employees</p>
                             <h2 id="kpi-total">0</h2>
@@ -379,18 +357,22 @@
                             <p>Absent</p>
                             <h2 id="kpi-absent" class="text-danger">0</h2>
                         </div>
+                        <div class="kpi-card">
+                            <p>No Record</p>
+                            <h2 id="kpi-norecord" class="text-muted">0</h2>
+                        </div>
                     </div>
 
                     <!-- QR CODE SCANNER BUTTON - Opens modal for scanning student IDs -->
                     <button class="btn-primary mb-4" id="admin-open-qr-btn">
-                        <span class="material-symbols-outlined mr-2">qr_code_scanner</span> Open Webcam QR Scanner
+                        <span class="material-symbols-outlined mr-2">qr_code_scanner</span> Open QR scanner
                     </button>
 
                     <!-- TWO COLUMN LAYOUT: Roster on left, Activity Feed on right -->
                     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
                         <!-- STUDENT ROSTER TABLE - Shows all employees with status -->
                         <div class="card">
-                            <h3 class="mb-4">Student Roster</h3>
+                            <h3 class="mb-4 typo-h2">Student Roster</h3>
                             <div class="table-container">
                                 <table class="data-table">
                                     <thead>
@@ -408,7 +390,7 @@
                         </div>
                         <!-- ACTIVITY FEED - Shows recent check-ins and actions -->
                         <div class="card bg-light">
-                            <h3 class="mb-4">Live Activity Feed</h3>
+                            <h3 class="mb-4 typo-h2">Live Activity Feed</h3>
                             <!-- Feed items populated by script.js addFeedLog() -->
                             <div id="admin-activity-feed" class="feed-container"></div>
                         </div>
@@ -421,7 +403,7 @@
                     Data updated every 1 second when employees are on-shift
                     ================================= -->
                 <div id="section-shift" class="view-section admin-view hidden">
-                    <div class="page-header"><h1 class="greeting">Active Shifts</h1></div>
+                    <div class="page-header"><h1 class="greeting typo-h1">Active Shifts</h1></div>
                     <div class="card">
                         <table class="data-table">
                             <thead>
@@ -444,7 +426,7 @@
                     ======================================= -->
                 <div id="section-calendar" class="view-section admin-view hidden">
                     <div class="page-header flex justify-between align-center">
-                        <h1 class="greeting">Attendance History</h1>
+                        <h1 class="greeting typo-h1">Attendance History</h1>
                         <div class="flex gap-2 flex-wrap">
                         <button type="button" class="btn-primary" id="export-csv-btn">
                             <span class="material-symbols-outlined mr-2">download</span> Export CSV
@@ -455,10 +437,24 @@
                         </div>
                     </div>
                     <!-- Date and Filter Controls -->
-                    <div class="card mb-4 flex justify-between align-center">
-                        <div class="flex gap-4 align-center">
-                            <label class="font-semibold">Select Date:</label>
-                            <input type="date" id="history-date" class="input-base" style="width: 200px;">
+                    <div class="card mb-4 flex justify-between align-center flex-wrap gap-4 history-filter-card">
+                        <div class="flex gap-3 align-center date-picker-field">
+                            <div class="date-picker-wrap">
+                                <button type="button" class="date-picker-trigger" id="history-date-trigger" data-empty="true" aria-haspopup="dialog" aria-expanded="false" aria-label="Select date">
+                                    <span class="material-symbols-outlined date-picker-trigger-icon" aria-hidden="true">calendar_month</span>
+                                    <span id="history-date-label" class="date-picker-trigger-label">Pick a date</span>
+                                </button>
+                                <input type="hidden" id="history-date" value="">
+                                <div id="history-date-popover" class="date-picker-popover hidden" role="dialog" aria-label="Choose date">
+                                    <div class="date-picker-popover-head">
+                                        <button type="button" class="date-picker-nav date-picker-prev" aria-label="Previous month"><span class="material-symbols-outlined">chevron_left</span></button>
+                                        <span class="date-picker-popover-title"></span>
+                                        <button type="button" class="date-picker-nav date-picker-next" aria-label="Next month"><span class="material-symbols-outlined">chevron_right</span></button>
+                                    </div>
+                                    <div class="date-picker-dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+                                    <div class="date-picker-grid" id="history-date-popover-grid"></div>
+                                </div>
+                            </div>
                         </div>
                         <div class="flex gap-2">
                             <button class="btn-outline active" id="filter-day">Day</button>
@@ -467,7 +463,7 @@
                         </div>
                     </div>
                     <!-- History Table -->
-                    <div class="card">
+                    <div class="card history-table-card">
                         <table class="data-table">
                             <thead>
                                 <tr>
@@ -496,18 +492,25 @@
                     3. Configure data and options for your chart
                     ======================================= -->
                 <div id="section-dashboards" class="view-section admin-view hidden">
-                    <div class="page-header"><h1 class="greeting">Statistics & Reports</h1></div>
-                    <div class="chart-container flex gap-4">
-                        <div class="card w-full">
-                            <h3 class="mb-4">Attendance Overview</h3>
+                    <div class="page-header"><h1 class="greeting typo-h1">Statistics & Reports</h1></div>
+                    <div class="chart-container flex gap-4 flex-wrap">
+                        <div class="card w-full chart-panel">
+                            <h3 class="mb-4 typo-h2">Attendance Overview</h3>
                             <div class="chart-wrapper">
                                 <canvas id="attendanceChart"></canvas>
                             </div>
                         </div>
-                        <div class="card w-full">
-                            <h3 class="mb-4">Department Distribution</h3>
+                        <div class="card w-full chart-panel">
+                            <h3 class="mb-4 typo-h2">Department Distribution</h3>
                             <div class="chart-wrapper">
                                 <canvas id="deptChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card w-full chart-panel chart-panel-wide">
+                            <h3 class="mb-4 typo-h2">Monthly attendance report</h3>
+                            <p class="text-muted text-sm mb-3">Present, late, absent, and excused by month from Supabase <code class="font-mono text-xs">attendance_daily</code> (demo data until rows exist).</p>
+                            <div class="chart-wrapper chart-wrapper-tall">
+                                <canvas id="monthlyAttendanceChart"></canvas>
                             </div>
                         </div>
                     </div>
@@ -521,7 +524,7 @@
                     ======================================= -->
                 <div id="section-portfolio" class="view-section admin-view hidden">
                     <div class="page-header flex justify-between align-center">
-                        <h1 class="greeting">Employee Portfolio</h1>
+                        <h1 class="greeting typo-h1">Employee Portfolio</h1>
                         <!-- Department Filter Buttons -->
                         <div class="flex gap-2">
                             <button class="btn-outline active" onclick="filterPortfolio('All')">All</button>
@@ -550,7 +553,7 @@
                     ======================================= -->
                 <div id="student-home" class="view-section student-view hidden">
                     <div class="page-header">
-                        <h1 class="greeting" id="student-greeting-text">Good Morning, Student 🎓</h1>
+                        <h1 class="greeting typo-h1" id="student-greeting-text">Good Morning, Student</h1>
                     </div>
                     
                     <!-- THREE COLUMN LAYOUT: Profile, Check-in, Activity Logger -->
@@ -566,6 +569,10 @@
                                 <label class="text-xs text-muted">Bio / About Me</label>
                                 <textarea id="std-edit-bio" class="input-base" rows="3" placeholder="Tell us about yourself..."></textarea>
                             </div>
+                            <div class="mb-3">
+                                <label class="text-xs text-muted">Phone</label>
+                                <input type="tel" id="std-edit-phone" class="input-base" autocomplete="tel" placeholder="+1 555 000 0000">
+                            </div>
                             <button class="btn-secondary w-full" id="std-save-profile-btn">Save Profile Updates</button>
                         </div>
 
@@ -574,7 +581,7 @@
                             <h3 class="border-b pb-2 mb-4">Attendance Check-in</h3>
                             <div class="mb-4">
                                 <div class="text-xs text-muted mb-1">CURRENT STATUS</div>
-                                <div id="std-current-status" class="text-2xl font-bold">Absent</div>
+                                <div id="std-current-status" class="std-status-badge-wrap">—</div>
                             </div>
                             
                             <button class="btn-primary w-full mb-2" id="std-mark-btn">
@@ -629,7 +636,7 @@
                     create new CSS classes and use them instead
                     ======================================= -->
                 <div id="student-id-view" class="view-section student-view hidden">
-                    <div class="page-header"><h1 class="greeting">My Virtual ID 🪪</h1></div>
+                    <div class="page-header"><h1 class="greeting">My Virtual ID </h1></div>
                     
                     <!-- Spotlight-style Virtual ID (vanilla port of React SpotlightCard) -->
                     <div class="vid-page-wrap">
@@ -667,7 +674,7 @@
                     Click to view their public profile
                     ======================================= -->
                 <div id="student-directory-view" class="view-section student-view hidden">
-                    <div class="page-header"><h1 class="greeting">Student Directory 👥</h1></div>
+                    <div class="page-header"><h1 class="greeting">Student Directory</h1></div>
                     <!-- Directory grid populated by renderStudentDirectory() -->
                     <div class="employee-grid" id="student-directory-grid"></div>
                 </div>
@@ -740,6 +747,10 @@
                 <label class="text-xs">Email</label>
                 <input type="email" id="self-edit-email" class="input-base">
             </div>
+            <div class="mb-4">
+                <label class="text-xs">Phone</label>
+                <input type="tel" id="self-edit-phone" class="input-base" autocomplete="tel" placeholder="+1 555 000 0000">
+            </div>
             <div class="flex gap-2">
                 <button class="btn-secondary w-full" onclick="document.getElementById('admin-self-edit-modal').classList.add('hidden')">Cancel</button>
                 <button class="btn-primary w-full" id="admin-save-self-btn">Save Changes</button>
@@ -757,8 +768,8 @@
         - Browser permissions needed for camera
         - Scanned data: rolling attendance payload SYNC_ORG|emp_id|expiry, or plain emp_id
         ======================================= -->
-    <div id="qr-modal" class="modal hidden">
-        <div class="modal-content" style="width: 450px; max-width: 95%;">
+    <div id="qr-modal" class="modal hidden qr-modal-mobile">
+        <div class="modal-content qr-modal-content">
             <h3 class="mb-2">Admin QR Scanner</h3>
             <p class="text-muted mb-4 text-sm">Align the QR code inside the green frame.</p>
             <div class="qr-scanner-viewport">
@@ -776,7 +787,7 @@
         Admin can edit: ID, name, status, department, batch, team
         Triggered by clicking "Edit" button on student roster
         ======================================= -->
-    <div id="admin-edit-modal" class="modal hidden">
+    <div id="admin-edit-modal" class="modal hidden" aria-hidden="true">
         <div class="modal-content" style="width: 400px;">
             <h3 class="mb-4 border-b pb-2">Admin Student Editor</h3>
             <!-- Hidden ID field to know which student to update -->
@@ -793,6 +804,8 @@
                         <option value="Present">Present</option>
                         <option value="Late">Late</option>
                         <option value="Absent">Absent</option>
+                        <option value="Excused">Excused</option>
+                        <option value="No Record">No Record</option>
                     </select>
                 </div>
             </div>
@@ -801,7 +814,10 @@
                 <label class="text-xs">Full Name</label>
                 <input type="text" id="edit-modal-name" class="input-base">
             </div>
-            
+            <div class="mb-2">
+                <label class="text-xs">Phone</label>
+                <input type="tel" id="edit-modal-phone" class="input-base" autocomplete="tel" placeholder="+1 555 000 0000">
+            </div>
             <div class="flex gap-2 mb-2">
                 <div class="w-full">
                     <label class="text-xs">Department</label>
@@ -891,8 +907,8 @@
         </div>
     </div>
 
-    <!-- React Bits Light Rays (WebGL + ogl) -->
-    <script type="module" src="/lightrays-init.js"></script>
+    <!-- React Bits ColorBends (Three.js) — see src/components/ColorBends -->
+    <script type="module" src="/src/color-bends-react.jsx"></script>
     <!-- MAIN APPLICATION SCRIPT - All functionality -->
     <script type="module" src="/script.js"></script>
 </body>
