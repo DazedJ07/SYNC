@@ -427,20 +427,22 @@ document.addEventListener('DOMContentLoaded', () => {
      * Prioritizes the current browser origin to ensure it works on the device actually being used (e.g., phone vs pc).
      */
     function getAppBaseUrl() {
-        // Use the current origin as the safest default for redirects
-        let origin = window.location.origin;
-        
-        // If a specific site URL is forced via env, we use it, but only if we're not testing locally.
-        const envUrl = String(import.meta.env.VITE_SITE_URL || '').trim().replace(/\/+$/, '');
+        const origin = window.location.origin;
         const host = window.location.hostname;
         const isLocal = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local') || /^192\.168\./.test(host);
+        
+        // Potential environment variable from Vercel/Vite build
+        const envUrl = String(import.meta.env.VITE_SITE_URL || '').trim().replace(/\/+$/, '');
 
-        if (envUrl && !isLocal) {
+        // Use envUrl only if it's NOT a localhost URL while on a non-local machine
+        if (envUrl && !isLocal && !envUrl.includes('localhost')) {
             return envUrl;
         }
 
-        // Return current origin with trailing slash if needed
-        return origin.endsWith('/') ? origin : origin + '/';
+        // Fallback to the current browser origin (safest for mobile & Vercel)
+        const finalUrl = origin.endsWith('/') ? origin : origin + '/';
+        console.log('[Auth] Redirect URL payload:', finalUrl);
+        return finalUrl;
     }
 
     function getOAuthRedirectTo() {
