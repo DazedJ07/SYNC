@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd SYNC-main && npm install",
+  "buildCommand": "cd SYNC-main && npm run build",
+  "outputDirectory": "SYNC-main/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
