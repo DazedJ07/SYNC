@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_URL = 'https://yhiqtdgoeuctpybvjbrc.supabase.co'; 
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InloaXF0ZGdvZXVjdHB5YnZqYnJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2MjIyOTMsImV4cCI6MjA5MTE5ODI5M30.4hjObsvtcrm5GRZ9MvA31xfgTqwHoalkuWa_5R9itrg';
 
-    /** Set `VITE_ORG_SECRET` in `.env` (see `.env.example`). Used when admins create an account. */
+    /** Admin signup passphrase. Default `2026` unless `VITE_ORG_SECRET` in `.env` overrides it (must match exactly). */
     const ORG_SECRET = String(import.meta.env.VITE_ORG_SECRET || '2026').trim();
 
     // Supabase email OTP: Dashboard → Auth → Email Templates → Magic Link must include {{ .Token }} for 6-digit codes.
@@ -108,8 +108,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${vis}@${d}`;
     }
 
-    // Initialize Supabase client
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Initialize Supabase client (PKCE + URL detection so Google OAuth redirect completes)
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: {
+            detectSessionInUrl: true,
+            flowType: 'pkce',
+            persistSession: true,
+            autoRefreshToken: true,
+        },
+    });
 
     function localDateStr(d) {
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -190,21 +197,36 @@ document.addEventListener('DOMContentLoaded', () => {
         return { error };
     }
 
-    /** Aggregates `attendance_daily` for the monthly chart (last 6 calendar months). Returns null if unavailable. */
+    function buildMonthlyAttendanceShell() {
+        const monthKeys = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            monthKeys.push({
+                key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+                label: d.toLocaleString(undefined, { month: 'short' }),
+            });
+        }
+        return {
+            monthKeys,
+            emptyResult: () => ({
+                labels: monthKeys.map((m) => m.label),
+                series: monthKeys.map(() => ({ present: 0, late: 0, absent: 0, excused: 0 })),
+            }),
+        };
+    }
+
+    /** Aggregates `attendance_daily` for the monthly chart (last 6 calendar months). Returns null only if the query fails (e.g. table missing). Empty rows → real zeros. */
     async function fetchMonthlyAttendanceFromSupabase() {
         const start = new Date();
         start.setMonth(start.getMonth() - 5);
         start.setDate(1);
         const fromStr = localDateStr(start);
         const { data, error } = await supabase.from('attendance_daily').select('day,status').gte('day', fromStr);
-        if (error || !data || !data.length) return null;
+        const { monthKeys, emptyResult } = buildMonthlyAttendanceShell();
+        if (error) return null;
+        if (!data || !data.length) return emptyResult();
 
-        const monthKeys = [];
-        const now = new Date();
-        for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            monthKeys.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleString(undefined, { month: 'short' }) });
-        }
         const bucket = {};
         monthKeys.forEach((m) => {
             bucket[m.key] = { present: 0, late: 0, absent: 0, excused: 0 };
@@ -301,9 +323,10 @@ document.addEventListener('DOMContentLoaded', () => {
         imgEl.src = primary;
     }
 
+    /** Rolling QR payload. Expiry is base36 with `e` prefix so phone OS scanners (e.g. iOS) do not treat the code as a phone number. */
     function buildRollingAttendancePayload(empId) {
-        const exp = Date.now() + ATT_DYNAMIC_TTL_MS;
-        return `SYNC_ORG|${empId}|${exp}`;
+        const expMs = Date.now() + ATT_DYNAMIC_TTL_MS;
+        return `SYNC_ORG|${empId}|e${expMs.toString(36)}`;
     }
 
     function renderDynamicAttendanceQr() {
@@ -343,15 +366,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /** Admin scanner: rolling attendance QR or legacy plain emp_id. */
+    /** Admin scanner: rolling attendance QR or legacy plain emp_id. Supports legacy numeric expiry and `e`+base36 expiry. */
     function parseScannedAttendancePayload(text) {
         const raw = String(text || '').trim();
         const parts = raw.split('|');
         if (parts.length >= 3 && parts[0] === 'SYNC_ORG') {
             const empId = parts[1];
-            const exp = parseInt(parts[2], 10);
-            if (!Number.isFinite(exp)) return { error: 'bad_format' };
-            if (Date.now() > exp) return { error: 'expired', empId };
+            const token = parts[2];
+            let expMs;
+            if (/^\d{10,}$/.test(token)) {
+                expMs = parseInt(token, 10);
+            } else {
+                const m = /^e([0-9a-z]+)$/i.exec(token);
+                if (!m) return { error: 'bad_format' };
+                expMs = parseInt(m[1], 36);
+            }
+            if (!Number.isFinite(expMs)) return { error: 'bad_format' };
+            if (Date.now() > expMs) return { error: 'expired', empId };
             return { empId };
         }
         return { empId: raw };
@@ -359,6 +390,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function escJsQuoted(s) {
         return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    function escHtml(s) {
+        return String(s ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     // ==================== GLOBAL STATE VARIABLES ====================
@@ -370,7 +409,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let calendarDate = new Date();       // Current date being viewed in calendar
     let html5QrcodeScanner = null;       // QR scanner instance reference (desktop)
     let html5QrCodeCamera = null;      // Html5Qrcode instance (mobile / back camera)
-    let qrScanProcessing = false;      // Avoid duplicate decode while marking attendance
+    let qrScanProcessing = false;      // Avoid duplicate decode while modal open or marking attendance
+    let pendingQrCheckinEmp = null;    // Employee row waiting for Present/Late in admin QR modal
 
     // ==================== UI LOGIN PAGE CONTROLS ====================
     // Manages switching between Sign In and Sign Up form views
@@ -399,10 +439,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('auth-tab-signin')?.addEventListener('click', () => setAuthView(false));
     document.getElementById('auth-tab-signup')?.addEventListener('click', () => setAuthView(true));
 
+    function getOAuthRedirectTo() {
+        const env = String(import.meta.env.VITE_SITE_URL || '').trim();
+        if (env) return env.replace(/\/+$/, '');
+        try {
+            const u = new URL(window.location.href);
+            u.hash = '';
+            u.search = '';
+            let path = u.pathname || '/';
+            if (path !== '/' && !path.endsWith('/')) path += '/';
+            return `${u.origin}${path}`;
+        } catch {
+            return `${window.location.origin}/`;
+        }
+    }
+
     async function startGoogleOAuth(errorBoxId) {
         const errBox = document.getElementById(errorBoxId);
         if (errBox) errBox.classList.add('hidden');
-        const redirectTo = `${window.location.origin}${window.location.pathname}`;
+        const redirectTo = getOAuthRedirectTo();
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: { redirectTo },
@@ -502,7 +557,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const isAdmin = signupAdminRadio.checked;
             if (isAdmin) {
                 const orgId = document.getElementById('reg-org-id').value.trim();
-                if (!orgId) { errBox.innerText = 'Please enter your organization code.'; errBox.classList.remove('hidden'); return false; }
+                if (!orgId) {
+                    errBox.innerText = 'Please enter your organization code.';
+                    errBox.classList.remove('hidden');
+                    return false;
+                }
+                if (orgId !== ORG_SECRET) {
+                    errBox.innerText = 'That organization code is not valid. Use the passphrase your administrator gave you (for this build it must match the configured org secret).';
+                    errBox.classList.remove('hidden');
+                    return false;
+                }
             } else {
                 const studentId = document.getElementById('reg-student-id').value.trim();
                 if (!studentId) { errBox.innerText = 'Please enter your Student ID.'; errBox.classList.remove('hidden'); return false; }
@@ -578,6 +642,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const orgId = document.getElementById('reg-org-id').value.trim();
         const empId = document.getElementById('reg-student-id').value.trim();
 
+        if (role === 'admin' && orgId !== ORG_SECRET) {
+            throw new Error('Invalid organization code.');
+        }
+
         const { error } = await supabase.auth.signInWithOtp({
             email,
             options: { shouldCreateUser: true },
@@ -632,7 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (vErr) throw new Error(vErr.message || 'Invalid or expired code.');
 
                 if (role === 'admin') {
-                const orgId = d.orgId;
+                const orgId = String(d.orgId ?? '').trim();
                 if (orgId !== ORG_SECRET) throw new Error('Invalid organization code.');
                 const phoneVal = d.phone && String(d.phone).trim() !== '' ? String(d.phone).trim() : null;
                 const { error } = await supabase.from('admins').insert([{ org_id: orgId, admin_name: name, email, username: user, password: pass, phone: phoneVal }]);
@@ -1198,10 +1266,108 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fetches all employees from Supabase database
     // Caches data in allEmployees array for quick access
     
+    async function fetchPendingExcuseRequests() {
+        try {
+            const { data, error } = await supabase
+                .from('excuse_requests')
+                .select('*')
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        } catch {
+            return null;
+        }
+    }
+
     async function loadAdminData() {
         const { data } = await supabase.from('employees').select('*');
         allEmployees = data || [];
         renderAdminRoster();
+        const pendingExcuses = await fetchPendingExcuseRequests();
+        renderPendingExcuseRequests(pendingExcuses);
+    }
+
+    function renderPendingExcuseRequests(rows) {
+        const wrap = document.getElementById('admin-pending-excuses-body');
+        if (!wrap) return;
+        if (rows === null) {
+            wrap.innerHTML =
+                '<p class="text-muted text-sm">Excuse queue needs the <code class="text-xs font-mono">excuse_requests</code> table. Run <code class="text-xs font-mono">002_excuse_requests.sql</code> in Supabase SQL Editor.</p>';
+            return;
+        }
+        if (!rows.length) {
+            wrap.innerHTML = '<p class="text-muted text-sm">No pending excuse requests.</p>';
+            return;
+        }
+        wrap.innerHTML = rows
+            .map((r) => {
+                const emp = allEmployees.find((e) => e.id === r.employee_id);
+                const name = emp?.full_name || 'Unknown student';
+                const eid = emp?.emp_id || '';
+                let fileLine = '<span class="text-muted text-xs">No attachment</span>';
+                if (r.attachment_data_url && r.attachment_filename) {
+                    const href = String(r.attachment_data_url).replace(/"/g, '&quot;');
+                    fileLine = `<a class="text-primary text-sm underline" href="${href}" target="_blank" rel="noopener noreferrer">${escHtml(r.attachment_filename)}</a>`;
+                }
+                return `<div class="excuse-pending-row" style="padding:12px;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--card-bg)">
+                    <div class="flex justify-between gap-2 flex-wrap align-center">
+                        <div><b>${escHtml(name)}</b> <span class="text-muted text-xs">${escHtml(eid)}</span></div>
+                        <span class="badge-status badge-status--late">Pending</span>
+                    </div>
+                    <p class="text-sm mt-2">${escHtml(r.reason || '—')}</p>
+                    <div class="mt-1">${fileLine}</div>
+                    <div class="flex gap-2 mt-3 flex-wrap">
+                        <button type="button" class="btn-primary text-xs flex-1" data-excuse-approve="${r.id}">Approve (mark Excused)</button>
+                        <button type="button" class="btn-secondary text-xs flex-1" data-excuse-deny="${r.id}">Deny</button>
+                    </div>
+                </div>`;
+            })
+            .join('');
+
+        wrap.querySelectorAll('[data-excuse-approve]').forEach((btn) => {
+            btn.addEventListener('click', () => void approveExcuseRequest(parseInt(btn.getAttribute('data-excuse-approve'), 10)));
+        });
+        wrap.querySelectorAll('[data-excuse-deny]').forEach((btn) => {
+            btn.addEventListener('click', () => void denyExcuseRequest(parseInt(btn.getAttribute('data-excuse-deny'), 10)));
+        });
+    }
+
+    async function approveExcuseRequest(requestId) {
+        const { data: row, error: fErr } = await supabase.from('excuse_requests').select('employee_id').eq('id', requestId).maybeSingle();
+        if (fErr || !row) {
+            alert('Could not load that request.');
+            return;
+        }
+        const { error: upErr } = await patchEmployee(row.employee_id, {
+            status: 'Excused',
+            shift_status: 'Off-Shift',
+            last_check_in_at: null,
+        });
+        if (upErr) {
+            alert(upErr.message || 'Update failed');
+            return;
+        }
+        await supabase
+            .from('excuse_requests')
+            .update({ status: 'approved', resolved_at: new Date().toISOString() })
+            .eq('id', requestId);
+        showToast('Excuse approved. Student is marked Excused.');
+        if (currentUser?.accountType === 'admin') addFeedLog(currentUser.admin_name || 'Admin', `approved excuse request #${requestId}`);
+        await loadAdminData();
+    }
+
+    async function denyExcuseRequest(requestId) {
+        const { error } = await supabase
+            .from('excuse_requests')
+            .update({ status: 'denied', resolved_at: new Date().toISOString() })
+            .eq('id', requestId);
+        if (error) {
+            alert(error.message || 'Could not update request.');
+            return;
+        }
+        showToast('Excuse request denied.');
+        await loadAdminData();
     }
 
     // ==================== RENDER ADMIN ROSTER TABLE ====================
@@ -1299,10 +1465,58 @@ document.addEventListener('DOMContentLoaded', () => {
         return window.innerWidth < 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
     }
 
+    function closeAdminQrCheckinModal() {
+        pendingQrCheckinEmp = null;
+        const m = document.getElementById('admin-qr-checkin-modal');
+        if (m) m.classList.add('hidden');
+        qrScanProcessing = false;
+    }
+
+    function openAdminQrCheckinModal(emp) {
+        pendingQrCheckinEmp = emp;
+        const now = new Date();
+        const mins = now.getHours() * 60 + now.getMinutes();
+        const suggested = mins > 8 * 60 + 30 ? 'Late' : 'Present';
+        const nameEl = document.getElementById('admin-qr-checkin-name');
+        const idEl = document.getElementById('admin-qr-checkin-empid');
+        const sugEl = document.getElementById('admin-qr-checkin-suggest');
+        if (nameEl) nameEl.textContent = emp.full_name || 'Student';
+        if (idEl) idEl.textContent = emp.emp_id || '';
+        if (sugEl) {
+            sugEl.textContent =
+                suggested === 'Present'
+                    ? 'Recommended for this time: Present (before 8:30). Tap Present or Late to record check-in.'
+                    : 'Recommended for this time: Late (after 8:30). Tap Present or Late to record check-in.';
+        }
+        const modal = document.getElementById('admin-qr-checkin-modal');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+    async function confirmAdminQrCheckin(statusChoice) {
+        const emp = pendingQrCheckinEmp;
+        if (!emp) return;
+        const now = new Date();
+        const { error: upErr } = await patchEmployee(emp.id, {
+            status: statusChoice,
+            shift_status: 'On-Shift',
+            last_check_in_at: now.toISOString(),
+        });
+        if (upErr) {
+            alert(upErr.message || 'Update failed');
+            return;
+        }
+        showToast(`Checked in: ${emp.full_name} (${statusChoice})`);
+        addFeedLog(emp.full_name, `checked in via QR (${statusChoice})`);
+        closeAdminQrCheckinModal();
+        await closeScanner();
+        await loadAdminData();
+    }
+
     async function handleAdminQrDecoded(decodedText) {
         if (qrScanProcessing) return;
         if (decodedText == null || String(decodedText).trim() === '') return;
         qrScanProcessing = true;
+        let openedCheckinModal = false;
         try {
             const parsed = parseScannedAttendancePayload(decodedText);
             if (parsed.error === 'expired') {
@@ -1319,29 +1533,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const emp = allEmployees.find((e) => e.emp_id === lookupId);
 
             if (emp) {
-                const now = new Date();
-                const mins = now.getHours() * 60 + now.getMinutes();
-                const st = mins > 8 * 60 + 30 ? 'Late' : 'Present';
-                const { error: upErr } = await patchEmployee(emp.id, {
-                    status: st,
-                    shift_status: 'On-Shift',
-                    last_check_in_at: now.toISOString(),
-                });
-                if (upErr) {
-                    alert(upErr.message || 'Update failed');
-                    await closeScanner();
-                    return;
-                }
-
-                showToast(`Verified: ${emp.full_name}`);
-                addFeedLog(emp.full_name, 'checked in via QR scanner');
-                loadAdminData();
+                openedCheckinModal = true;
+                openAdminQrCheckinModal(emp);
             } else {
                 alert(`Unknown QR (no employee for ID): ${lookupId}`);
+                await closeScanner();
             }
-            await closeScanner();
         } finally {
-            qrScanProcessing = false;
+            if (!openedCheckinModal) qrScanProcessing = false;
         }
     }
 
@@ -1403,6 +1602,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ==================== CLOSE QR SCANNER ====================
     async function closeScanner() {
+        closeAdminQrCheckinModal();
         if (html5QrCodeCamera) {
             try {
                 await html5QrCodeCamera.stop();
@@ -1428,6 +1628,106 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const closeQrBtn = document.getElementById('close-qr-btn');
     if (closeQrBtn) closeQrBtn.addEventListener('click', () => void closeScanner());
+
+    document.getElementById('admin-qr-apply-present')?.addEventListener('click', () => void confirmAdminQrCheckin('Present'));
+    document.getElementById('admin-qr-apply-late')?.addEventListener('click', () => void confirmAdminQrCheckin('Late'));
+    document.getElementById('admin-qr-checkin-cancel')?.addEventListener('click', () => {
+        closeAdminQrCheckinModal();
+    });
+
+    const EXCUSE_ATTACH_MAX_BYTES = 380 * 1024;
+
+    function resetStudentExcuseForm() {
+        const r = document.getElementById('student-excuse-reason');
+        const f = document.getElementById('student-excuse-file');
+        if (r) r.value = '';
+        if (f) f.value = '';
+    }
+
+    document.getElementById('std-open-excuse-btn')?.addEventListener('click', () => {
+        resetStudentExcuseForm();
+        document.getElementById('student-excuse-modal')?.classList.remove('hidden');
+    });
+    document.getElementById('student-excuse-cancel')?.addEventListener('click', () => {
+        document.getElementById('student-excuse-modal')?.classList.add('hidden');
+        resetStudentExcuseForm();
+    });
+    document.getElementById('student-excuse-submit')?.addEventListener('click', async () => {
+        if (!currentUser || currentUser.accountType !== 'student') return;
+        const reason = document.getElementById('student-excuse-reason')?.value?.trim() || '';
+        const errBox = document.getElementById('student-excuse-error');
+        if (errBox) errBox.classList.add('hidden');
+        if (reason.length < 3) {
+            if (errBox) {
+                errBox.textContent = 'Please enter a short reason (at least 3 characters).';
+                errBox.classList.remove('hidden');
+            }
+            return;
+        }
+        const fileIn = document.getElementById('student-excuse-file');
+        const file = fileIn?.files?.[0];
+        let attachmentDataUrl = null;
+        let attachmentFilename = null;
+        if (file) {
+            if (file.size > EXCUSE_ATTACH_MAX_BYTES) {
+                if (errBox) {
+                    errBox.textContent = 'File is too large. Please use a file under 380 KB (or skip the attachment).';
+                    errBox.classList.remove('hidden');
+                }
+                return;
+            }
+            try {
+                attachmentDataUrl = await new Promise((resolve, reject) => {
+                    const fr = new FileReader();
+                    fr.onload = () => resolve(fr.result);
+                    fr.onerror = () => reject(new Error('read failed'));
+                    fr.readAsDataURL(file);
+                });
+                attachmentFilename = file.name || 'attachment';
+            } catch {
+                if (errBox) {
+                    errBox.textContent = 'Could not read the file. Try another image or PDF.';
+                    errBox.classList.remove('hidden');
+                }
+                return;
+            }
+        }
+        const { data: pendingRow } = await supabase
+            .from('excuse_requests')
+            .select('id')
+            .eq('employee_id', currentUser.id)
+            .eq('status', 'pending')
+            .maybeSingle();
+        if (pendingRow) {
+            if (errBox) {
+                errBox.textContent = 'You already have a pending excuse request. Wait for an admin to review it.';
+                errBox.classList.remove('hidden');
+            }
+            return;
+        }
+        const { error } = await supabase.from('excuse_requests').insert([
+            {
+                employee_id: currentUser.id,
+                reason,
+                attachment_data_url: attachmentDataUrl,
+                attachment_filename: attachmentFilename,
+                status: 'pending',
+            },
+        ]);
+        if (error) {
+            if (errBox) {
+                errBox.textContent =
+                    /relation|does not exist/i.test(String(error.message))
+                        ? 'Excuse requests are not set up yet. Ask your admin to run the Supabase SQL migration for excuse_requests.'
+                        : error.message || 'Could not submit.';
+                errBox.classList.remove('hidden');
+            }
+            return;
+        }
+        document.getElementById('student-excuse-modal')?.classList.add('hidden');
+        resetStudentExcuseForm();
+        showToast('Excuse request sent. An admin will review it.');
+    });
 
     // ==================== GLOBAL SHIFT TIMER ====================
     // Updates work duration every 1 second for employees on-shift
@@ -1591,6 +1891,20 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    const DEMO_MONTHLY_ATTENDANCE_ROWS = [
+        { present: 180, late: 15, absent: 5, excused: 10 },
+        { present: 195, late: 10, absent: 8, excused: 2 },
+        { present: 170, late: 25, absent: 12, excused: 7 },
+        { present: 210, late: 5, absent: 3, excused: 4 },
+        { present: 185, late: 20, absent: 10, excused: 5 },
+        { present: 160, late: 30, absent: 15, excused: 12 },
+    ];
+
+    function monthlySeriesHasAnyCount(series) {
+        if (!series || !series.length) return false;
+        return series.some((r) => (r.present || 0) + (r.late || 0) + (r.absent || 0) + (r.excused || 0) > 0);
+    }
+
     async function renderCharts() {
         const { axis: chartAxisColor, grid: chartGridColor } = getChartThemeColors();
         const now = new Date();
@@ -1693,25 +2007,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const monthlyCtx = document.getElementById('monthlyAttendanceChart');
+        const monthlyBlurb = document.getElementById('monthly-chart-blurb');
         if (monthlyCtx) {
             if (window.monthlyAttChart) window.monthlyAttChart.destroy();
-            const remote = await fetchMonthlyAttendanceFromSupabase();
             let monthLabels;
             let rows;
-            if (remote) {
-                monthLabels = remote.labels;
-                rows = remote.series;
-            } else {
+            let blurbText =
+                'Present, late, absent, and excused by month. Sample data is shown when the database query fails or there are no monthly counts yet.';
+            try {
+                const remote = await fetchMonthlyAttendanceFromSupabase();
+                if (remote && monthlySeriesHasAnyCount(remote.series)) {
+                    monthLabels = remote.labels;
+                    rows = remote.series;
+                    blurbText =
+                        'Present, late, absent, and excused by month from your organization’s saved attendance (last six months).';
+                } else if (remote) {
+                    monthLabels = remote.labels;
+                    rows = DEMO_MONTHLY_ATTENDANCE_ROWS;
+                    blurbText =
+                        'Attendance is connected, but there are no daily totals in range yet—showing sample bars so the chart is visible. Data will fill in as check-ins are recorded.';
+                } else {
+                    monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+                    rows = DEMO_MONTHLY_ATTENDANCE_ROWS;
+                }
+            } catch (e) {
+                console.warn('Monthly attendance chart:', e);
                 monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-                rows = [
-                    { present: 180, late: 15, absent: 5, excused: 10 },
-                    { present: 195, late: 10, absent: 8, excused: 2 },
-                    { present: 170, late: 25, absent: 12, excused: 7 },
-                    { present: 210, late: 5, absent: 3, excused: 4 },
-                    { present: 185, late: 20, absent: 10, excused: 5 },
-                    { present: 160, late: 30, absent: 15, excused: 12 },
-                ];
+                rows = DEMO_MONTHLY_ATTENDANCE_ROWS;
             }
+            if (monthlyBlurb) monthlyBlurb.textContent = blurbText;
             window.monthlyAttChart = new Chart(monthlyCtx.getContext('2d'), {
                 type: 'bar',
                 data: {
@@ -1743,6 +2067,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
             });
         }
+
+        await new Promise((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+        [window.attChart, window.deptChart, window.monthlyAttChart].forEach((ch) => {
+            if (ch && typeof ch.resize === 'function') ch.resize();
+        });
     }
 
     document.addEventListener('syncorg-themechange', () => {

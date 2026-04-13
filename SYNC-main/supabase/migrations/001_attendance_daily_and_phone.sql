@@ -20,3 +20,17 @@ alter table public.admins add column if not exists phone text;
 -- Optional: tighten RLS for production (anon key). Example — allow read/write only for authenticated users:
 -- alter table public.attendance_daily enable row level security;
 -- (Add policies matching your auth model.)
+
+-- ---------------------------------------------------------------------------
+-- Admin org passphrase (stored in `admins.org_id` as text)
+-- The app checks signup input against VITE_ORG_SECRET (default code in code: 2026).
+-- To fix admins who signed up with the wrong code:
+--   update public.admins set org_id = '2026' where org_id in ('2025', 'wrong');
+-- ---------------------------------------------------------------------------
+
+-- If `attendance_daily` exists but the monthly chart stays empty in the UI, ensure the anon key can read it.
+-- Example permissive policies (only if you enable RLS):
+-- alter table public.attendance_daily enable row level security;
+-- create policy "attendance_daily_select" on public.attendance_daily for select to anon using (true);
+-- create policy "attendance_daily_insert" on public.attendance_daily for insert to anon with check (true);
+-- create policy "attendance_daily_update" on public.attendance_daily for update to anon using (true) with check (true);

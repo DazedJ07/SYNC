@@ -176,7 +176,7 @@
                                     <span class="material-symbols-outlined input-icon">badge</span>
                                     <input type="text" id="reg-student-id" placeholder="Student ID (e.g. EV-001)">
                                 </div>
-                                <p class="auth-hint auth-hint-admin" id="org-code-hint">Admins: enter the organization passphrase (typed as hidden). Configure <code class="font-mono text-xs">VITE_ORG_SECRET</code> in your env for production.</p>
+                                <p class="auth-hint auth-hint-admin" id="org-code-hint">Admins: enter your organization’s private passphrase (the field hides what you type). If you don’t have it, ask whoever manages SYNC for your school or team.</p>
                             </div>
 
                             <div class="stepper-step hidden" id="stepper-step-2">
@@ -364,9 +364,16 @@
                     </div>
 
                     <!-- QR CODE SCANNER BUTTON - Opens modal for scanning student IDs -->
-                    <button class="btn-primary mb-4" id="admin-open-qr-btn">
+                    <button class="btn-primary mb-2" id="admin-open-qr-btn">
                         <span class="material-symbols-outlined mr-2">qr_code_scanner</span> Open QR scanner
                     </button>
+                    <p class="text-muted text-sm mb-4 max-w-xl">Use this in-app scanner so check-in runs in SYNC. The phone’s built-in Camera app may misread the attendance QR—open SYNC in the browser, tap Open QR scanner, and allow the camera.</p>
+
+                    <div class="card mb-6" id="admin-pending-excuses-card">
+                        <h3 class="mb-2 typo-h2">Pending excuse requests</h3>
+                        <p class="text-muted text-sm mb-3">Students can submit an excuse with an optional file. Approve to mark them Excused, or deny to leave attendance unchanged.</p>
+                        <div id="admin-pending-excuses-body"></div>
+                    </div>
 
                     <!-- TWO COLUMN LAYOUT: Roster on left, Activity Feed on right -->
                     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
@@ -508,7 +515,7 @@
                         </div>
                         <div class="card w-full chart-panel chart-panel-wide">
                             <h3 class="mb-4 typo-h2">Monthly attendance report</h3>
-                            <p class="text-muted text-sm mb-3">Present, late, absent, and excused by month from Supabase <code class="font-mono text-xs">attendance_daily</code> (demo data until rows exist).</p>
+                            <p class="text-muted text-sm mb-3" id="monthly-chart-blurb">Present, late, absent, and excused by month. Sample data is shown when the database query fails or there are no monthly counts yet.</p>
                             <div class="chart-wrapper chart-wrapper-tall">
                                 <canvas id="monthlyAttendanceChart"></canvas>
                             </div>
@@ -596,7 +603,9 @@
                             </div>
                             
                             <p class="text-muted text-xs my-2">-- OR --</p>
-                            <button class="btn-outline w-full" id="std-show-qr-btn">Show Permanent ID QR</button>
+                            <button class="btn-outline w-full mb-2" id="std-show-qr-btn">Show Permanent ID QR</button>
+                            <button type="button" class="btn-secondary w-full text-sm" id="std-open-excuse-btn">Request excused absence (file optional)</button>
+                            <p class="text-muted text-xs mt-2">Submit a reason for your admin to approve. You’ll see Excused on your record only after approval.</p>
                         </div>
 
                         <!-- COLUMN 3: ACTIVITY LOGGER -->
@@ -766,12 +775,12 @@
         SETUP NOTES:
         - Requires HTTPS or localhost
         - Browser permissions needed for camera
-        - Scanned data: rolling attendance payload SYNC_ORG|emp_id|expiry, or plain emp_id
+        -         Scanned data: SYNC_ORG|emp_id|e plus base36 expiry (or legacy numeric expiry), or plain emp_id
         ======================================= -->
     <div id="qr-modal" class="modal hidden qr-modal-mobile">
         <div class="modal-content qr-modal-content">
             <h3 class="mb-2">Admin QR Scanner</h3>
-            <p class="text-muted mb-4 text-sm">Align the QR code inside the green frame.</p>
+            <p class="text-muted mb-4 text-sm">Align the student’s <strong>Attendance QR</strong> (refreshes on their dashboard) inside the frame. Then choose Present or Late.</p>
             <div class="qr-scanner-viewport">
                 <div id="reader"></div>
                 <div class="qr-scanner-overlay" aria-hidden="true">
@@ -779,6 +788,36 @@
                 </div>
             </div>
             <button id="close-qr-btn" class="btn-secondary mt-4 w-full">Cancel</button>
+        </div>
+    </div>
+
+    <div id="admin-qr-checkin-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content" style="max-width: 420px;">
+            <h3 class="mb-2 typo-h2">Record check-in</h3>
+            <p class="text-sm mb-1"><b id="admin-qr-checkin-name">—</b></p>
+            <p class="text-muted text-xs mb-3 font-mono" id="admin-qr-checkin-empid"></p>
+            <p class="text-sm text-muted mb-4" id="admin-qr-checkin-suggest"></p>
+            <div class="flex gap-2 mb-2">
+                <button type="button" class="btn-primary flex-1" id="admin-qr-apply-present">Present</button>
+                <button type="button" class="btn-secondary flex-1" id="admin-qr-apply-late">Late</button>
+            </div>
+            <button type="button" class="btn-outline w-full" id="admin-qr-checkin-cancel">Cancel (scan again)</button>
+        </div>
+    </div>
+
+    <div id="student-excuse-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content" style="max-width: 440px;">
+            <h3 class="mb-2 typo-h2">Request excused absence</h3>
+            <p class="text-muted text-sm mb-3">Your admin will see this as <strong>pending</strong> until they approve or deny.</p>
+            <label class="text-xs text-muted block mb-1">Reason</label>
+            <textarea id="student-excuse-reason" class="input-base w-full mb-3" rows="4" placeholder="e.g. Medical appointment, family emergency…"></textarea>
+            <label class="text-xs text-muted block mb-1">Attachment (optional, max ~380 KB)</label>
+            <input type="file" id="student-excuse-file" class="input-base w-full mb-3" accept="image/*,.pdf,application/pdf">
+            <p id="student-excuse-error" class="text-danger text-sm mb-3 hidden"></p>
+            <div class="flex gap-2">
+                <button type="button" class="btn-secondary flex-1" id="student-excuse-cancel">Cancel</button>
+                <button type="button" class="btn-primary flex-1" id="student-excuse-submit">Submit request</button>
+            </div>
         </div>
     </div>
 
