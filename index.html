@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNC.org</title>
+    <meta name="description" content="SYNC - Smart Youth Networking & Collaboration. Premium attendance and student management system.">
+    <script>
+    (function () {
+        try {
+            var t = localStorage.getItem('syncorg-theme');
+            if (t !== 'light' && t !== 'dark') t = 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+    })();
+    </script>
+    <!-- STYLESHEETS & FONTS -->
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/border-glow.css">
+    <!-- Material Design Icons - Used throughout the app -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+    <!-- Google Inter Font - Clean, modern typeface -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- EXTERNAL LIBRARIES -->
+    <!-- Supabase, Chart.js, HTML5-QRCode, and GSAP are now handled via npm in script.js -->
+
+</head>
+<body>
+<!-- ==========================================================================================
+    LOGIN PAGE - Initial authentication screen before accessing dashboard
+    Users can toggle between Sign In (admin/student) and Sign Up (create account)
+    ==========================================================================================
+-->
+
+    <div id="login-page" class="view-active login-page-wrap">
+        <div class="login-theme-corner">
+            <span class="theme-switch-label" id="login-theme-label">Dark mode</span>
+            <button type="button" class="theme-switch-ui" data-theme-toggle role="switch" aria-checked="true" aria-label="Toggle dark mode">
+                <span class="theme-switch-ui-track" aria-hidden="true"></span>
+                <span class="theme-switch-ui-thumb" aria-hidden="true"></span>
+            </button>
+        </div>
+        <div class="login-bg login-bg-mesh"></div>
+        <div id="color-bends-root" class="login-color-bends" aria-hidden="true"></div>
+        <div class="login-page-center">
+        <div class="auth-card" id="container">
+            <div class="auth-card-brand">
+                <div class="auth-brand-logo">
+                    <img src="/Logo/ev.png" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="auth-brand-fallback" style="display: none;">EV</div>
+                </div>
+                <h1 class="auth-brand-title">SYNC.org</h1>
+                <p class="auth-brand-sub">Attendance &amp; portfolio portal</p>
+            </div>
+
+            <div class="auth-tabs" role="tablist" aria-label="Sign in or create account">
+                <button type="button" class="auth-tab active" id="auth-tab-signin" role="tab" aria-selected="true" aria-controls="auth-panel-signin">Sign in</button>
+                <button type="button" class="auth-tab" id="auth-tab-signup" role="tab" aria-selected="false" aria-controls="auth-panel-signup">Create account</button>
+            </div>
+
+            <div class="auth-panels">
+                <div class="auth-panel" id="auth-panel-signin" role="tabpanel" aria-labelledby="auth-tab-signin">
+                    <form id="login-form" class="auth-form">
+                        <div id="login-error" class="error-msg hidden"></div>
+                        <label class="auth-field-label" for="username">Email, username, or full name</label>
+                        <div class="input-group auth-input-tight">
+                            <span class="material-symbols-outlined input-icon">account_circle</span>
+                            <input type="text" id="username" autocomplete="username" placeholder="you@example.com" required>
+                        </div>
+                        <label class="auth-field-label" for="password">Password</label>
+                        <div class="input-group auth-input-tight">
+                            <span class="material-symbols-outlined input-icon">lock</span>
+                            <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" required>
+                        </div>
+                        <button type="submit" class="btn-auth-primary w-full">Sign in</button>
+                        <div class="auth-divider"><span>or</span></div>
+                        <button type="button" class="btn-google w-full flex align-center justify-center" id="login-google-btn" aria-label="Sign in with Google">
+                            <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.197 0-9.61-3.318-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+                            Continue with Google
+                        </button>
+                    </form>
+
+                    <div id="login-otp-panel" class="login-otp-panel hidden" aria-live="polite">
+                        <p class="login-otp-title">Verify it is you</p>
+                        <p class="login-otp-hint">Your network changed since last sign-in. Enter the code sent to <strong id="login-otp-email-display"></strong></p>
+                        <input type="hidden" id="login-otp-input" value="" autocomplete="one-time-code">
+                        <div class="otp-slot-wrap" id="login-otp-slots" role="group" aria-label="One-time code">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 1">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 2">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 3">
+                            <span class="otp-separator" aria-hidden="true"></span>
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 4">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 5">
+                            <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 6">
+                        </div>
+                        <div id="login-otp-error" class="error-msg hidden"></div>
+                        <button type="button" class="btn-auth-primary w-full mt-2" id="login-otp-verify-btn">Verify code</button>
+                        <button type="button" class="otp-resend-btn" id="login-otp-resend-btn">Resend code</button>
+                        <button type="button" class="login-otp-cancel" id="login-otp-cancel-btn">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="auth-panel hidden" id="auth-panel-signup" role="tabpanel" aria-labelledby="auth-tab-signup">
+                    <div class="signup-scroll">
+                        <div class="stepper-outer" id="signup-stepper">
+                            <h2 class="auth-signup-heading">Create account</h2>
+                            <p class="auth-signup-lead">Admin or student — three quick steps</p>
+
+                            <div class="stepper-indicator-row" id="stepper-indicators">
+                                <div class="step-indicator" data-step="1">
+                                    <div class="step-indicator-inner active"><div class="step-active-dot"></div></div>
+                                </div>
+                                <div class="step-connector"><div class="step-connector-fill" id="conn-1-2"></div></div>
+                                <div class="step-indicator" data-step="2">
+                                    <div class="step-indicator-inner inactive"><span class="step-number">2</span></div>
+                                </div>
+                                <div class="step-connector"><div class="step-connector-fill" id="conn-2-3"></div></div>
+                                <div class="step-indicator" data-step="3">
+                                    <div class="step-indicator-inner inactive"><span class="step-number">3</span></div>
+                                </div>
+                            </div>
+
+                            <div id="signup-error" class="error-msg hidden signup-error-slot"></div>
+
+                            <div class="stepper-step" id="stepper-step-1">
+                                <p class="auth-step-title">I am registering as a…</p>
+                                <div class="role-toggle mb-4">
+                                    <input type="radio" id="signup-admin" name="signup-role" value="admin" checked>
+                                    <label for="signup-admin">Admin</label>
+                                    <input type="radio" id="signup-student" name="signup-role" value="student">
+                                    <label for="signup-student">Student</label>
+                                </div>
+                                <div class="input-group" id="group-org-id">
+                                    <span class="material-symbols-outlined input-icon">vpn_key</span>
+                                    <input type="password" id="reg-org-id" placeholder="Organization code" autocomplete="new-password" spellcheck="false">
+                                </div>
+                                <div class="input-group hidden" id="group-student-id">
+                                    <span class="material-symbols-outlined input-icon">badge</span>
+                                    <input type="text" id="reg-student-id" placeholder="Student ID (e.g. EV-001)">
+                                </div>
+                                <p class="auth-hint auth-hint-admin" id="org-code-hint">Admins: enter your organization’s private passphrase. If you do not have this code, please contact your organization administrator.</p>
+                            </div>
+
+                            <div class="stepper-step hidden" id="stepper-step-2">
+                                <p class="auth-step-title">Your details</p>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">person</span>
+                                    <input type="text" id="reg-name" placeholder="Full name" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">account_circle</span>
+                                    <input type="text" id="reg-username" placeholder="Username" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">mail</span>
+                                    <input type="email" id="reg-email" placeholder="Email" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">lock</span>
+                                    <input type="password" id="reg-password" placeholder="Password" required>
+                                </div>
+                                <div class="input-group">
+                                    <span class="material-symbols-outlined input-icon">call</span>
+                                    <input type="tel" id="reg-phone" placeholder="Phone (optional)" autocomplete="tel">
+                                </div>
+                            </div>
+
+                            <div class="stepper-step hidden" id="stepper-step-3">
+                                <p class="signup-otp-intro">We sent a verification code to<br><strong id="otp-email-display" class="signup-otp-email"></strong></p>
+                                <input type="hidden" id="reg-otp" value="" autocomplete="one-time-code">
+                                <div class="otp-slot-wrap" id="signup-otp-slots" role="group" aria-label="Verification code">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 1">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 2">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 3">
+                                    <span class="otp-separator" aria-hidden="true"></span>
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 4">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 5">
+                                    <input class="otp-slot" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]*" aria-label="Digit 6">
+                                </div>
+                                <p class="text-muted text-xs text-center mb-2 signup-otp-hint">Check your inbox (and spam). Use the code from Supabase Auth email.</p>
+                                <button type="button" class="otp-resend-btn" id="signup-resend-otp">Resend code</button>
+                            </div>
+
+                            <div id="signup-social-row" class="signup-social-row">
+                                <div class="auth-divider"><span>or</span></div>
+                                <button type="button" class="btn-google w-full flex align-center justify-center" id="signup-google-btn" aria-label="Continue with Google">
+                                    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.197 0-9.61-3.318-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+                                    Continue with Google
+                                </button>
+                            </div>
+
+                            <div class="stepper-footer">
+                                <div class="stepper-footer-nav end" id="stepper-nav">
+                                    <button type="button" class="stepper-back-btn hidden" id="stepper-back-btn">Back</button>
+                                    <button type="button" class="stepper-next-btn" id="stepper-next-btn">Next</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <div id="app-page" class="hidden app-layout">
+        <div id="app-color-bends-root" class="app-color-bends-layer" aria-hidden="true"></div>
+        <!-- TOP NAVIGATION BAR -->
+        <nav class="top-navbar">
+            <div class="navbar-left">
+                <img src="Logo/ev.png" class="navbar-logo" alt="Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="navbar-logo-fallback" style="display:none;">EV</div>
+                <span class="navbar-brand">SYNC.org</span>
+            </div>
+            
+            <!-- Admin Nav Buttons -->
+            <div class="navbar-nav" id="admin-nav" style="display:none;">
+                <button class="nav-btn active" data-target="section-home">
+                    <span class="material-symbols-outlined">home</span>
+                    <span class="nav-btn-label">Home</span>
+                </button>
+                <button class="nav-btn" data-target="section-shift">
+                    <span class="material-symbols-outlined">schedule</span>
+                    <span class="nav-btn-label">Shifts</span>
+                </button>
+                <button class="nav-btn" data-target="section-calendar">
+                    <span class="material-symbols-outlined">event_available</span>
+                    <span class="nav-btn-label">History</span>
+                </button>
+                <button class="nav-btn" data-target="section-dashboards">
+                    <span class="material-symbols-outlined">bar_chart</span>
+                    <span class="nav-btn-label">Reports</span>
+                </button>
+                <button class="nav-btn" data-target="section-portfolio">
+                    <span class="material-symbols-outlined">folder</span>
+                    <span class="nav-btn-label">Portfolio</span>
+                </button>
+            </div>
+            
+            <!-- Student Nav Buttons -->
+            <div class="navbar-nav" id="student-nav" style="display:none;">
+                <button class="nav-btn active" data-target="student-home">
+                    <span class="material-symbols-outlined">dashboard</span>
+                    <span class="nav-btn-label">Dashboard</span>
+                </button>
+                <button class="nav-btn" data-target="student-id-view">
+                    <span class="material-symbols-outlined">badge</span>
+                    <span class="nav-btn-label">My ID</span>
+                </button>
+                <button class="nav-btn" data-target="student-calendar-view">
+                    <span class="material-symbols-outlined">calendar_month</span>
+                    <span class="nav-btn-label">Calendar</span>
+                </button>
+                <button class="nav-btn" data-target="student-directory-view">
+                    <span class="material-symbols-outlined">groups</span>
+                    <span class="nav-btn-label">Directory</span>
+                </button>
+            </div>
+            
+            <div class="navbar-right">
+                <button type="button" class="theme-switch-ui theme-switch-ui--nav" data-theme-toggle role="switch" aria-checked="true" aria-label="Toggle dark mode" title="Light / Dark">
+                    <span class="theme-switch-ui-track" aria-hidden="true"></span>
+                    <span class="theme-switch-ui-thumb" aria-hidden="true"></span>
+                </button>
+                <button id="admin-edit-self-btn" class="icon-btn-text hidden" title="Edit Admin Profile">
+                    <span class="material-symbols-outlined">settings</span>
+                </button>
+                <span id="nav-user-name" class="navbar-username">User Name</span>
+                <div class="avatar-upload-wrapper" onclick="document.getElementById('profile-upload').click()" title="Change profile picture">
+                    <img src="https://i.pravatar.cc/150?img=11" alt="Profile" class="avatar-sm cursor-pointer" id="nav-avatar" width="36" height="36">
+                    <div class="avatar-overlay"><span class="material-symbols-outlined text-xs">edit</span></div>
+                </div>
+                <input type="file" id="profile-upload" accept="image/*" class="hidden">
+                <button class="navbar-signout" onclick="logout()">
+                    <span class="material-symbols-outlined" style="font-size:18px;">logout</span>
+                    <span>Sign Out</span>
+                </button>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            <!-- Dashboard sections go here (no wrapper frame) -->
+                
+                <!-- ===============================
+                    ADMIN HOME SECTION - Dashboard overview with KPIs and roster
+                    Shows: Total employees, present count, late count, absent count
+                    Features: QR scanner button, real-time roster table, activity feed
+                    
+                    TO ADD NEW KPI CARDS:
+                    1. Add new div with class="kpi-card" in kpi-grid
+                    2. Give the <h2> a unique ID
+                    3. In script.js renderAdminRoster(), update the KPI using getElementById
+                    
+                    TO ADD NEW ROSTER COLUMNS:
+                    1. Add <th> header in table
+                    2. Add corresponding <td> data in tbody while rendering
+                    3. Update styles.css if needed for column width
+                    ================================= -->
+                <div id="section-home" class="view-section admin-view">
+                    <div class="page-header">
+                        <h1 class="greeting typo-h1" id="admin-greeting-text">Dashboard Overview</h1>
+                    </div>
+                    
+                    <!-- KEY PERFORMANCE INDICATORS (KPIs) -->
+                    <div class="kpi-grid kpi-grid-5 kpi-bento">
+                        <div class="kpi-card">
+                            <p>Total Employees</p>
+                            <h2 id="kpi-total">0</h2>
+                        </div>
+                        <div class="kpi-card">
+                            <p>Present Today</p>
+                            <h2 id="kpi-present" class="text-success">0</h2>
+                        </div>
+                        <div class="kpi-card">
+                            <p>Late</p>
+                            <h2 id="kpi-late" class="text-warning">0</h2>
+                        </div>
+                        <div class="kpi-card">
+                            <p>Absent</p>
+                            <h2 id="kpi-absent" class="text-danger">0</h2>
+                        </div>
+                        <div class="kpi-card">
+                            <p>No Record</p>
+                            <h2 id="kpi-norecord" class="text-muted">0</h2>
+                        </div>
+                    </div>
+
+                    <!-- QR CODE SCANNER BUTTON - Opens modal for scanning student IDs -->
+                    <button class="btn-primary mb-2" id="admin-open-qr-btn">
+                        <span class="material-symbols-outlined mr-2">qr_code_scanner</span> Open QR scanner
+                    </button>
+                    <p class="text-muted text-sm mb-4 max-w-xl">Use this in-app scanner so check-in runs in SYNC. The phone’s built-in Camera app may misread the attendance QR—open SYNC in the browser, tap Open QR scanner, and allow the camera.</p>
+
+                    <div class="card mb-6" id="admin-pending-excuses-card">
+                        <h3 class="mb-2 typo-h2">Pending excuse requests</h3>
+                        <p class="text-muted text-sm mb-3">Students can submit an excuse with an optional file. Approve to mark them Excused, or deny to leave attendance unchanged.</p>
+                        <div id="admin-pending-excuses-body"></div>
+                    </div>
+
+                    <!-- TWO COLUMN LAYOUT: Roster on left, Activity Feed on right -->
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                        <!-- STUDENT ROSTER TABLE - Shows all employees with status -->
+                        <div class="card">
+                            <h3 class="mb-4 typo-h2">Student Roster</h3>
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name / ID</th>
+                                            <th>Dept & Team</th>
+                                            <th>Status</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <!-- Table body populated by script.js renderAdminRoster() -->
+                                    <tbody id="admin-roster-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <!-- ACTIVITY FEED - Shows recent check-ins and actions -->
+                        <div class="card bg-light">
+                            <h3 class="mb-4 typo-h2">Live Activity Feed</h3>
+                            <!-- Feed items populated by script.js addFeedLog() -->
+                            <div id="admin-activity-feed" class="feed-container"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===============================
+                    ADMIN SECTION: ACTIVE SHIFTS
+                    Shows real-time tracking of employee work hours
+                    Data updated every 1 second when employees are on-shift
+                    ================================= -->
+                <div id="section-shift" class="view-section admin-view hidden">
+                    <div class="page-header"><h1 class="greeting typo-h1">Active Shifts</h1></div>
+                    <div class="card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Shift Status</th>
+                                    <th>Work Duration</th>
+                                </tr>
+                            </thead>
+                            <!-- Body populated by renderShifts() in script.js -->
+                            <tbody id="shift-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- =======================================
+                    ADMIN SECTION: CALENDAR HISTORY
+                    View attendance records filtered by date
+                    Features: Date picker, filter by day/week/month, export to CSV
+                    ======================================= -->
+                <div id="section-calendar" class="view-section admin-view hidden">
+                    <div class="page-header flex justify-between align-center">
+                        <h1 class="greeting typo-h1">Attendance History</h1>
+                        <div class="flex gap-2 flex-wrap">
+                        <button type="button" class="btn-primary" id="export-csv-btn">
+                            <span class="material-symbols-outlined mr-2">download</span> Export CSV
+                        </button>
+                        <button type="button" class="btn-secondary" id="export-pdf-btn">
+                            <span class="material-symbols-outlined mr-2">picture_as_pdf</span> Export PDF
+                        </button>
+                        </div>
+                    </div>
+                    <!-- Date and Filter Controls -->
+                    <div class="card mb-4 flex justify-between align-center flex-wrap gap-4 history-filter-card">
+                        <div class="flex gap-3 align-center date-picker-field">
+                            <div class="date-picker-wrap">
+                                <button type="button" class="date-picker-trigger" id="history-date-trigger" data-empty="true" aria-haspopup="dialog" aria-expanded="false" aria-label="Select date">
+                                    <span class="material-symbols-outlined date-picker-trigger-icon" aria-hidden="true">calendar_month</span>
+                                    <span id="history-date-label" class="date-picker-trigger-label">Pick a date</span>
+                                </button>
+                                <input type="hidden" id="history-date" value="">
+                                <div id="history-date-popover" class="date-picker-popover hidden" role="dialog" aria-label="Choose date">
+                                    <div class="date-picker-popover-head">
+                                        <button type="button" class="date-picker-nav date-picker-prev" aria-label="Previous month"><span class="material-symbols-outlined">chevron_left</span></button>
+                                        <span class="date-picker-popover-title"></span>
+                                        <button type="button" class="date-picker-nav date-picker-next" aria-label="Next month"><span class="material-symbols-outlined">chevron_right</span></button>
+                                    </div>
+                                    <div class="date-picker-dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+                                    <div class="date-picker-grid" id="history-date-popover-grid"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn-outline active" id="filter-day">Day</button>
+                            <button class="btn-outline" id="filter-week">Week</button>
+                            <button class="btn-outline" id="filter-month">Month</button>
+                        </div>
+                    </div>
+                    <!-- History Table -->
+                    <div class="card history-table-card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Date</th>
+                                    <th>Recorded Status</th>
+                                </tr>
+                            </thead>
+                            <!-- Body populated by simulateAdminHistory() in script.js -->
+                            <tbody id="history-tbody">
+                                <tr><td colspan="3" class="text-center text-muted">Select a date to view history.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- =======================================
+                    ADMIN SECTION: REPORTS & STATISTICS
+                    Shows charts and graphs for attendance analysis
+                    Uses Chart.js library for visualization
+                    Features: Stacked attendance bar, stacked department breakdown
+                    
+                    TO ADD NEW CHARTS:
+                    1. Add new canvas element with unique ID
+                    2. In renderCharts() function, create new Chart instance
+                    3. Configure data and options for your chart
+                    ======================================= -->
+                <div id="section-dashboards" class="view-section admin-view hidden">
+                    <div class="page-header"><h1 class="greeting typo-h1">Statistics & Reports</h1></div>
+                    <div class="chart-container flex gap-4 flex-wrap">
+                        <div class="card w-full chart-panel">
+                            <h3 class="mb-4 typo-h2">Attendance Overview</h3>
+                            <div class="chart-wrapper">
+                                <canvas id="attendanceChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card w-full chart-panel">
+                            <h3 class="mb-4 typo-h2">Department Distribution</h3>
+                            <div class="chart-wrapper">
+                                <canvas id="deptChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card w-full chart-panel chart-panel-wide">
+                            <h3 class="mb-4 typo-h2">Monthly attendance report</h3>
+                            <p class="text-muted text-sm mb-3" id="monthly-chart-blurb">Present, late, absent, and excused by month. Sample data is shown when the database query fails or there are no monthly counts yet.</p>
+                            <div class="chart-wrapper chart-wrapper-tall">
+                                <canvas id="monthlyAttendanceChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- =======================================
+                    ADMIN SECTION: EMPLOYEE PORTFOLIO
+                    Browse all employees with filtering options
+                    Click employee card to view their virtual ID
+                    Features: Filter by department, view profiles
+                    ======================================= -->
+                <div id="section-portfolio" class="view-section admin-view hidden">
+                    <div class="page-header flex justify-between align-center">
+                        <h1 class="greeting typo-h1">Employee Portfolio</h1>
+                        <!-- Department Filter Buttons -->
+                        <div class="flex gap-2">
+                            <button class="btn-outline active" onclick="filterPortfolio('All')">All</button>
+                            <button class="btn-outline" onclick="filterPortfolio('SOFTDEV')">SOFTDEV</button>
+                            <button class="btn-outline" onclick="filterPortfolio('3D DESIGN TEAM')">3D DESIGN TEAM</button>
+                        </div>
+                    </div>
+                    <!-- Employee Grid - Cards populated by renderPortfolio() -->
+                    <div class="employee-grid" id="portfolio-grid"></div>
+                </div>
+
+
+                <!-- =======================================
+                    STUDENT HOME SECTION - Personal dashboard
+                    Features:
+                    - Profile editor (username & bio)
+                    - Attendance check-in / show QR code
+                    - Activity logger (shift status, comments)
+                    - Weekly schedule display
+                    
+                    TO ADD NEW STUDENT FEATURES:
+                    1. Add new card div with unique ID
+                    2. Add input/button elements
+                    3. Create event listeners in script.js loadStudentData()
+                    4. Update database using supabase queries
+                    ======================================= -->
+                <div id="student-home" class="view-section student-view hidden">
+                    <div class="page-header">
+                        <h1 class="greeting typo-h1" id="student-greeting-text">Good Morning, Student</h1>
+                    </div>
+                    
+                    <!-- THREE COLUMN LAYOUT: Profile, Check-in, Activity Logger -->
+                    <div class="card-grid-3 mb-6">
+                        <!-- COLUMN 1: PROFILE SETTINGS -->
+                        <div class="card">
+                            <h3 class="border-b pb-2 mb-4">My Profile Settings</h3>
+                            <div class="mb-3">
+                                <label class="text-xs text-muted">Username</label>
+                                <input type="text" id="std-edit-username" class="input-base">
+                            </div>
+                            <div class="mb-3">
+                                <label class="text-xs text-muted">Bio / About Me</label>
+                                <textarea id="std-edit-bio" class="input-base" rows="3" placeholder="Tell us about yourself..."></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="text-xs text-muted">Phone</label>
+                                <input type="tel" id="std-edit-phone" class="input-base" autocomplete="tel" placeholder="+1 555 000 0000">
+                            </div>
+                            <button class="btn-secondary w-full" id="std-save-profile-btn">Save Profile Updates</button>
+                        </div>
+
+                        <!-- COLUMN 2: ATTENDANCE CHECK-IN + Dynamic QR -->
+                        <div class="card text-center">
+                            <h3 class="border-b pb-2 mb-4">Attendance Check-in</h3>
+                            <div class="mb-4">
+                                <div class="text-xs text-muted mb-1">CURRENT STATUS</div>
+                                <div id="std-current-status" class="std-status-badge-wrap">—</div>
+                            </div>
+                            
+                            <button class="btn-primary w-full mb-2" id="std-mark-btn">
+                                <span class="material-symbols-outlined mr-2">check_circle</span> Mark Attendance
+                            </button>
+                            
+                            <!-- Dynamic QR for Attendance -->
+                            <div class="dynamic-qr-section">
+                                <p class="text-xs text-muted mb-2">ATTENDANCE QR (refreshes every 30s)</p>
+                                <img id="dynamic-attendance-qr" src="" alt="Dynamic QR" style="width:140px;height:140px;">
+                                <div class="qr-timer" id="qr-timer-text">Refreshes in 30s</div>
+                            </div>
+                            
+                            <p class="text-muted text-xs my-2">-- OR --</p>
+                            <button class="btn-outline w-full mb-2" id="std-show-qr-btn">Show Permanent ID QR</button>
+                            <button type="button" class="btn-secondary w-full text-sm" id="std-open-excuse-btn">Request excused absence (file optional)</button>
+                            <p class="text-muted text-xs mt-2">Submit a reason for review. Your record will be updated once an administrator approves the request.</p>
+                        </div>
+
+                        <!-- COLUMN 3: ACTIVITY LOGGER -->
+                        <div class="card bg-light">
+                            <h3 class="border-b pb-2 mb-4">Activity Logger</h3>
+                            <div class="mb-3">
+                                <label class="text-xs text-muted block mb-1">Shift Status</label>
+                                <select id="std-shift-select" class="input-base">
+                                    <option value="Off-Shift">Off-Shift</option>
+                                    <option value="On-Shift">On-Shift</option>
+                                    <option value="Break">Break</option>
+                                </select>
+                            </div>
+                            <div class="mb-4">
+                                <label class="text-xs text-muted block mb-1">Comment</label>
+                                <textarea id="std-comment-input" class="input-base" rows="3"></textarea>
+                            </div>
+                            <button class="btn-primary w-full" id="std-submit-log-btn">Submit Log</button>
+                        </div>
+                    </div>
+
+                    <!-- WEEKLY SCHEDULE -->
+                    <div class="card w-full">
+                        <h3 class="border-b pb-2 mb-4">My Weekly Schedule</h3>
+                        <!-- Schedule grid populated by generateStudentSchedule() -->
+                        <div id="student-schedule-grid" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;"></div>
+                    </div>
+                </div>
+
+                <!-- =======================================
+                    STUDENT SECTION: VIRTUAL ID
+                    Displays student's digital ID card with QR code
+                    Shows personal info, team, and generated QR
+                    
+                    TO CUSTOMIZE ID DESIGN:
+                    Edit the inline styles in this section or
+                    create new CSS classes and use them instead
+                    ======================================= -->
+                <div id="student-id-view" class="view-section student-view hidden">
+                    <div class="page-header"><h1 class="greeting">My Virtual ID </h1></div>
+                    
+                    <!-- Spotlight-style Virtual ID (vanilla port of React SpotlightCard) -->
+                    <div class="vid-page-wrap">
+                        <div id="vid-spotlight-root" class="card-spotlight vid-spotlight-card" tabindex="0" aria-label="Virtual ID card">
+                            <div class="vid-spotlight-inner">
+                                <h2 id="embedded-vid-name" class="vid-spotlight-name">Name</h2>
+                                <p id="embedded-vid-role" class="vid-spotlight-role">Role</p>
+                                <div class="vid-spotlight-meta-row">
+                                    <div class="vid-meta-block">
+                                        <span class="vid-meta-label">ID number</span>
+                                        <span id="embedded-vid-empid" class="vid-meta-value font-mono">EV-000</span>
+                                    </div>
+                                    <div class="vid-meta-block">
+                                        <span class="vid-meta-label">Phone</span>
+                                        <span id="embedded-vid-phone" class="vid-meta-value">—</span>
+                                    </div>
+                                </div>
+                                <div class="vid-spotlight-avatar-wrap">
+                                    <img id="embedded-vid-avatar" class="vid-spotlight-avatar" src="https://i.pravatar.cc/150?img=11" alt="Profile photo" width="160" height="160" loading="lazy" referrerpolicy="no-referrer">
+                                </div>
+                                <div class="vid-spotlight-qr-wrap">
+                                    <span class="vid-meta-label">QR code</span>
+                                    <img id="embedded-vid-qr" class="vid-spotlight-qr" src="" alt="Employee QR code" width="200" height="200">
+                                </div>
+                                <p class="vid-spotlight-footer"><span id="embedded-vid-dept">Department</span> · <span id="embedded-vid-team">Team</span></p>
+                            </div>
+                            <button type="button" class="btn-secondary w-full mt-3" id="pc-show-qr-btn">Show full ID card</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- =======================================
+                    STUDENT SECTION: DIRECTORY
+                    Browse other students in the system
+                    Click to view their public profile
+                    ======================================= -->
+                <div id="student-directory-view" class="view-section student-view hidden">
+                    <div class="page-header"><h1 class="greeting">Student Directory</h1></div>
+                    <!-- Directory grid populated by renderStudentDirectory() -->
+                    <div class="employee-grid" id="student-directory-grid"></div>
+                </div>
+
+                <!-- =======================================
+                    STUDENT SECTION: CALENDAR
+                    Display calendar with attendance status for each day
+                    Color-coded: Green=Present, Orange=Late, Red=Absent, Purple=Excused
+                    Month navigation with prev/next buttons
+                    ======================================= -->
+                <div id="student-calendar-view" class="view-section student-view hidden">
+                    <div class="page-header"><h1 class="greeting">My Calendar</h1></div>
+                    <div class="calendar-card">
+                        <div class="calendar-header">
+                            <button class="calendar-nav-btn" id="cal-prev">
+                                <span class="material-symbols-outlined">chevron_left</span>
+                            </button>
+                            <h3 id="current-month-display">Month Year</h3>
+                            <button class="calendar-nav-btn" id="cal-next">
+                                <span class="material-symbols-outlined">chevron_right</span>
+                            </button>
+                        </div>
+                        <div class="calendar-legend">
+                            <span class="badge bg-success">Present</span>
+                            <span class="badge bg-warning">Late</span>
+                            <span class="badge bg-danger">Absent</span>
+                            <span class="badge bg-purple">Excused</span>
+                            <span class="badge bg-gray">No Record</span>
+                        </div>
+                        <div class="calendar-weekdays">
+                            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                        </div>
+                        <div id="student-calendar-grid" class="calendar-grid"></div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- =======================================
+        TOAST NOTIFICATION - Non-blocking alert messages
+        Appears at bottom of screen temporarily
+        Used for feedback like "Profile updated!", "Attendance recorded!"
+        
+        TO USE: showToast("Your message here") in script.js
+        ======================================= -->
+    <div id="toast" class="toast hidden">
+        <span class="material-symbols-outlined text-primary">info</span>
+        <span id="toast-msg">Notification</span>
+    </div>
+
+    <!-- =======================================
+        ADMIN SELF-EDIT MODAL - Admin profile editor
+        Allows admin to update own name, username, email
+        Triggered by clicking settings icon in header
+        ======================================= -->
+    <div id="admin-self-edit-modal" class="modal hidden">
+        <div class="modal-content" style="width: 400px;">
+            <h3 class="mb-4 border-b pb-2">Edit My Profile</h3>
+            <div class="mb-3">
+                <label class="text-xs">Full Name</label>
+                <input type="text" id="self-edit-name" class="input-base">
+            </div>
+            <div class="mb-3">
+                <label class="text-xs">Username</label>
+                <input type="text" id="self-edit-user" class="input-base">
+            </div>
+            <div class="mb-4">
+                <label class="text-xs">Email</label>
+                <input type="email" id="self-edit-email" class="input-base">
+            </div>
+            <div class="mb-4">
+                <label class="text-xs">Phone</label>
+                <input type="tel" id="self-edit-phone" class="input-base" autocomplete="tel" placeholder="+1 555 000 0000">
+            </div>
+            <div class="flex gap-2">
+                <button class="btn-secondary w-full" onclick="document.getElementById('admin-self-edit-modal').classList.add('hidden')">Cancel</button>
+                <button class="btn-primary w-full" id="admin-save-self-btn">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =======================================
+        QR SCANNER MODAL - Admin webcam QR scanner
+        Scans student QR codes to mark attendance
+        Uses Html5QRCode library for camera access
+        
+        SETUP NOTES:
+        - Requires HTTPS or localhost
+        - Browser permissions needed for camera
+        -         Scanned data: SYNC_ORG|emp_id|e plus base36 expiry (or legacy numeric expiry), or plain emp_id
+        ======================================= -->
+    <div id="qr-modal" class="modal hidden qr-modal-mobile">
+        <div class="modal-content qr-modal-content">
+            <h3 class="mb-2">Admin QR Scanner</h3>
+            <p class="text-muted mb-4 text-sm">Align the student’s <strong>Attendance QR</strong> (refreshes on their dashboard) inside the frame. Then choose Present or Late.</p>
+            <div class="qr-scanner-viewport">
+                <div id="reader"></div>
+                <div class="qr-scanner-overlay" aria-hidden="true">
+                    <div class="qr-scanner-frame"></div>
+                </div>
+            </div>
+            <button id="close-qr-btn" class="btn-secondary mt-4 w-full">Cancel</button>
+        </div>
+    </div>
+
+    <div id="admin-qr-checkin-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content" style="max-width: 420px;">
+            <h3 class="mb-2 typo-h2">Record check-in</h3>
+            <p class="text-sm mb-1"><b id="admin-qr-checkin-name">—</b></p>
+            <p class="text-muted text-xs mb-3 font-mono" id="admin-qr-checkin-empid"></p>
+            <p class="text-sm text-muted mb-4" id="admin-qr-checkin-suggest"></p>
+            <div class="flex gap-2 mb-2">
+                <button type="button" class="btn-primary flex-1" id="admin-qr-apply-present">Present</button>
+                <button type="button" class="btn-secondary flex-1" id="admin-qr-apply-late">Late</button>
+            </div>
+            <button type="button" class="btn-outline w-full" id="admin-qr-checkin-cancel">Cancel (scan again)</button>
+        </div>
+    </div>
+
+    <div id="student-excuse-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content" style="max-width: 440px;">
+            <h3 class="mb-2 typo-h2">Request excused absence</h3>
+            <p class="text-muted text-sm mb-3">Your request will remain <strong>pending</strong> until it is reviewed by an administrator.</p>
+            <label class="text-xs text-muted block mb-1">Reason</label>
+            <textarea id="student-excuse-reason" class="input-base w-full mb-3" rows="4" placeholder="e.g. Medical appointment, family emergency…"></textarea>
+            <label class="text-xs text-muted block mb-1">Attachment (optional, max ~380 KB)</label>
+            <input type="file" id="student-excuse-file" class="input-base w-full mb-3" accept="image/*,.pdf,application/pdf">
+            <p id="student-excuse-error" class="text-danger text-sm mb-3 hidden"></p>
+            <div class="flex gap-2">
+                <button type="button" class="btn-secondary flex-1" id="student-excuse-cancel">Cancel</button>
+                <button type="button" class="btn-primary flex-1" id="student-excuse-submit">Submit request</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =======================================
+        ADMIN STUDENT EDITOR MODAL - Edit student records
+        Admin can edit: ID, name, status, department, batch, team
+        Triggered by clicking "Edit" button on student roster
+        ======================================= -->
+    <div id="admin-edit-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content" style="width: 400px;">
+            <h3 class="mb-4 border-b pb-2">Admin Student Editor</h3>
+            <!-- Hidden ID field to know which student to update -->
+            <input type="hidden" id="edit-modal-id">
+            
+            <div class="flex gap-2 mb-2">
+                <div class="w-full">
+                    <label class="text-xs">ID Number</label>
+                    <input type="text" id="edit-modal-empid" class="input-base">
+                </div>
+                <div class="w-full">
+                    <label class="text-xs">Status</label>
+                    <select id="edit-modal-status" class="input-base">
+                        <option value="Present">Present</option>
+                        <option value="Late">Late</option>
+                        <option value="Absent">Absent</option>
+                        <option value="Excused">Excused</option>
+                        <option value="No Record">No Record</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="mb-2">
+                <label class="text-xs">Full Name</label>
+                <input type="text" id="edit-modal-name" class="input-base">
+            </div>
+            <div class="mb-2">
+                <label class="text-xs">Phone</label>
+                <input type="tel" id="edit-modal-phone" class="input-base" autocomplete="tel" placeholder="+1 555 000 0000">
+            </div>
+            <div class="flex gap-2 mb-2">
+                <div class="w-full">
+                    <label class="text-xs">Department</label>
+                    <select id="edit-modal-dept" class="input-base">
+                        <option value="SOFTDEV">SOFTDEV</option>
+                        <option value="3D DESIGN TEAM">3D DESIGN TEAM</option>
+                        <option value="Student">Unassigned</option>
+                    </select>
+                </div>
+                <div class="w-full">
+                    <label class="text-xs">Batch</label>
+                    <select id="edit-modal-batch" class="input-base">
+                        <option value="Batch 1">Batch 1</option>
+                        <option value="Batch 2">Batch 2</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <label class="text-xs">Team Assignment</label>
+                <input type="text" id="edit-modal-team" class="input-base" placeholder="e.g. Team Alpha">
+            </div>
+            
+            <div class="flex gap-2">
+                <button class="btn-secondary w-full" onclick="document.getElementById('admin-edit-modal').classList.add('hidden')">Cancel</button>
+                <button class="btn-primary w-full" id="admin-save-student-btn">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =======================================
+        VIRTUAL ID MODAL - Display student ID card
+        Shows: Avatar, Name, Role, Dept, ID, Team, Bio, QR Code
+        Shared modal used by both admin portfolio view and student QR display
+        ======================================= -->
+    <div id="vid-modal" class="modal hidden">
+        <div class="modal-content vid-modal-shell">
+            <div id="vid-modal-spotlight" class="card-spotlight vid-spotlight-card vid-modal-spotlight-inner" tabindex="0" aria-label="Virtual ID preview">
+                <div class="vid-spotlight-inner">
+                    <h2 id="vid-name" class="vid-spotlight-name">Name</h2>
+                    <p id="vid-role" class="vid-spotlight-role">Role</p>
+                    <div class="vid-spotlight-meta-row">
+                        <div class="vid-meta-block">
+                            <span class="vid-meta-label">ID number</span>
+                            <span id="vid-empid" class="vid-meta-value font-mono">EV-000</span>
+                        </div>
+                        <div class="vid-meta-block">
+                            <span class="vid-meta-label">Phone</span>
+                            <span id="vid-phone" class="vid-meta-value">—</span>
+                        </div>
+                    </div>
+                    <div class="vid-spotlight-avatar-wrap">
+                        <img id="vid-avatar" class="vid-spotlight-avatar" src="https://i.pravatar.cc/150?img=11" alt="Profile photo" width="140" height="140" loading="lazy" referrerpolicy="no-referrer">
+                    </div>
+                    <div class="vid-spotlight-qr-wrap">
+                        <span class="vid-meta-label">QR code</span>
+                        <img id="vid-qr" class="vid-spotlight-qr" src="" alt="QR code" width="200" height="200">
+                    </div>
+                    <p class="vid-spotlight-footer"><span id="vid-dept">Department</span> · <span id="vid-team">Team</span></p>
+                    <p id="vid-bio" class="vid-modal-bio text-muted text-xs">Bio</p>
+                </div>
+                <button type="button" class="btn-secondary w-full mt-3" onclick="document.getElementById('vid-modal').classList.add('hidden')">Close Virtual ID</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =======================================
+        PUBLIC PROFILE MODAL - View other student profiles
+        Shows: Name, Role, Department, Team, Bio, Avatar
+        Lighter version of virtual ID (no QR code)
+        Triggered when student clicks on directory entry
+        ======================================= -->
+    <div id="public-profile-modal" class="modal hidden">
+        <div class="modal-content" style="width: 350px; padding: 0; overflow: hidden; border-radius: 16px;">
+            <div style="background: var(--bg-color); height: 80px;"></div>
+            <div style="padding: 0 24px 24px; text-align: center;">
+                <img id="pub-avatar" src="https://i.pravatar.cc/150?img=11" style="width: 100px; height: 100px; border-radius: 50%; border: 4px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-top: -50px; background: #e2e8f0; object-fit: cover; position: relative;">
+                <h2 id="pub-name" style="margin: 12px 0 4px; font-size: 1.3rem;">Name</h2>
+                <p id="pub-role" style="color: var(--primary-color); font-weight: 600; font-size: 14px;">Role</p>
+                <div class="flex justify-center gap-2 mb-2">
+                    <span id="pub-dept" class="badge bg-light text-muted border-color" style="border: 1px solid;">Dept</span>
+                    <span id="pub-team" class="badge bg-light text-primary border-color" style="border: 1px solid;">Team</span>
+                </div>
+                <p id="pub-bio" class="text-muted text-sm mb-4 italic p-4 bg-light rounded border-color" style="border: 1px solid;">"Bio goes here"</p>
+            </div>
+            <button class="btn-secondary w-full" style="border-radius: 0; border: none; border-top: 1px solid var(--border-color); padding: 16px;" onclick="document.getElementById('public-profile-modal').classList.add('hidden')">Close Profile</button>
+        </div>
+    </div>
+
+    <!-- React Bits ColorBends (Three.js) — see src/components/ColorBends -->
+    <script type="module" src="/src/color-bends-react.jsx"></script>
+    <!-- MAIN APPLICATION SCRIPT - All functionality -->
+    <script type="module" src="/script.js"></script>
+</body>
+</html>

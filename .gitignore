@@ -1,39 +1,41 @@
 # Dependencies
 node_modules/
-**/node_modules/
 
 # Vite / build output
 dist/
-**/dist/
 dist-ssr/
 
-# Environment & secrets (never commit real keys)
+# Environment & secrets
 .env
-.env.*
-!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-debug-*.log
 
 # OS
 .DS_Store
 Thumbs.db
-Desktop.ini
 
-# Editor (uncomment if you prefer not to share VS Code settings)
-# .vscode/
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Vite cache
-*.local
+.vite/
 
-# Next.js (if you use next-app)
-.next/
-out/
+# Vercel
 .vercel
 
-# Test / coverage
-coverage/
+# Subfolders
+SYNC-main/
