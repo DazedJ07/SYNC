@@ -13,39 +13,81 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const THEME_KEY = 'syncorg-theme';
 
+    /**
+     * Manages high-level app views: landing, login, and dashboard (app-page).
+     * @param {string} viewId The ID of the div to show.
+     */
+    function showView(viewId) {
+        const views = ['landing-page', 'login-page', 'app-page'];
+        views.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (id === viewId) {
+                    el.classList.remove('hidden');
+                    el.classList.add('view-active');
+                } else {
+                    el.classList.add('hidden');
+                    el.classList.remove('view-active');
+                }
+            }
+        });
+        // Special handling for dashboard mount
+        if (viewId === 'app-page') {
+            document.dispatchEvent(new CustomEvent('syncorg-dashboard-init'));
+        }
+    }
+    window.showView = showView;
+
+    // ==================== THEME MANAGEMENT ====================
+    // Standardizes theme across sessions and dispatches events for React components
+    
     function applyTheme(theme) {
         const t = theme === 'light' ? 'light' : 'dark';
         document.documentElement.setAttribute('data-theme', t);
+        if (t === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
         try {
             localStorage.setItem(THEME_KEY, t);
         } catch (e) { /* ignore */ }
+        
+        // Sync Login Page UI
         const loginLbl = document.getElementById('login-theme-label');
         if (loginLbl) loginLbl.textContent = t === 'dark' ? 'Dark mode' : 'Light mode';
+        
+        // Update all toggle switches
         document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
             btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
             if (btn.getAttribute('role') === 'switch') {
                 btn.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false');
             }
         });
+        
+        // Notify React components (LandingPage, Dashboard)
         document.dispatchEvent(new CustomEvent('syncorg-themechange', { detail: { theme: t } }));
     }
 
-    document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-            applyTheme(cur === 'dark' ? 'light' : 'dark');
-        });
-    });
-    (function syncInitialThemeUi() {
-        const t = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    // Listen for theme changes from React components
+    document.addEventListener('syncorg-themechange', (e) => {
+        const t = e.detail.theme;
+        document.documentElement.setAttribute('data-theme', t);
+        if (t === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        localStorage.setItem(THEME_KEY, t);
+        
         const loginLbl = document.getElementById('login-theme-label');
         if (loginLbl) loginLbl.textContent = t === 'dark' ? 'Dark mode' : 'Light mode';
-        document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
-            btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
-            if (btn.getAttribute('role') === 'switch') {
-                btn.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false');
-            }
-        });
+    });
+
+    // Initialize UI on load
+    (function syncInitialThemeUi() {
+        const t = document.documentElement.getAttribute('data-theme') || 'light';
+        applyTheme(t);
     })();
 
     bindOtpSlotGroup('#signup-otp-slots', 'reg-otp');
@@ -272,6 +314,156 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ==================== QR + SPOTLIGHT VIRTUAL ID HELPERS ====================
     const SPOTLIGHT_COLOR = 'rgba(0, 229, 255, 0.22)';
+    const SESSION_QR_TTL_MS = 30 * 1000;
+    const SESSION_QR_REFRESH_MS = 25 * 1000;
+    let sessionQrInterval = null;
+
+    function bindCardSpotlights() {
+        document.querySelectorAll('.card-spotlight').forEach((el) => {
+            if (el._spotlightBound) return;
+            el._spotlightBound = true;
+            el.style.setProperty('--spotlight-color', SPOTLIGHT_COLOR);
+            el.addEventListener('mousemove', (e) => {
+                const rect = el.getBoundingClientRect();
+                el.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+                el.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+            });
+        });
+    }
+
+    function setQrOnImage(imgEl, data, size = 200) {
+        if (!imgEl) return;
+        const str = String(data ?? '');
+        if (!str) {
+            imgEl.removeAttribute('src');
+            return;
+        }
+        const enc = encodeURIComponent(str);
+        const primary = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${enc}`;
+        const fallback = `https://quickchart.io/qr?text=${enc}&size=${size}&margin=2`;
+        imgEl.onerror = function () {
+            imgEl.onerror = null;
+            imgEl.src = fallback;
+        };
+        imgEl.src = primary;
+    }
+
+    /** Admin Dynamic Session QR Generation */
+    function buildAdminSessionPayload() {
+        const expMs = Date.now() + SESSION_QR_TTL_MS;
+        const token = Math.random().toString(36).substring(2, 10);
+        const baseUrl = getAppBaseUrl();
+        return `${baseUrl}?action=checkin&token=${token}&expires=${expMs}`;
+    }
+
+    function renderAdminSessionQr() {
+        const img = document.getElementById('admin-session-qr-image');
+        const timerEl = document.getElementById('admin-session-qr-timer');
+        if (!img || !currentUser || currentUser.accountType !== 'admin') return;
+        
+        setQrOnImage(img, buildAdminSessionPayload(), 240);
+        
+        let sec = Math.ceil(SESSION_QR_REFRESH_MS / 1000);
+        if (timerEl) timerEl.textContent = `Refreshes in ${sec}s`;
+        
+        if (window._adminQrTimerCountdown) clearInterval(window._adminQrTimerCountdown);
+        window._adminQrTimerCountdown = setInterval(() => {
+            sec -= 1;
+            if (timerEl) timerEl.textContent = sec > 0 ? `Refreshes in ${sec}s` : 'Refreshing…';
+            if (sec <= 0) {
+                clearInterval(window._adminQrTimerCountdown);
+                window._adminQrTimerCountdown = null;
+            }
+        }, 1000);
+    }
+
+    function startAdminSessionQr() {
+        stopAdminSessionQr();
+        if (!currentUser || currentUser.accountType !== 'admin') return;
+        renderAdminSessionQr();
+        sessionQrInterval = setInterval(renderAdminSessionQr, SESSION_QR_REFRESH_MS);
+        document.getElementById('admin-session-qr-container').classList.remove('hidden');
+        document.getElementById('admin-toggle-session-qr').innerText = 'Hide Session QR';
+    }
+
+    function stopAdminSessionQr() {
+        if (sessionQrInterval) {
+            clearInterval(sessionQrInterval);
+            sessionQrInterval = null;
+        }
+        if (window._adminQrTimerCountdown) {
+            clearInterval(window._adminQrTimerCountdown);
+            window._adminQrTimerCountdown = null;
+        }
+        const container = document.getElementById('admin-session-qr-container');
+        if (container) container.classList.add('hidden');
+        const toggleBtn = document.getElementById('admin-toggle-session-qr');
+        if (toggleBtn) toggleBtn.innerText = 'Show Session QR';
+    }
+
+    /** Handle Session QR Scan from URL */
+    async function checkPendingCheckin() {
+        const params = new URLSearchParams(window.location.search);
+        const action = params.get('action');
+        const token = params.get('token');
+        const expires = params.get('expires');
+
+        if (action === 'checkin' && token && expires) {
+            // Clean URL
+            const url = new URL(window.location);
+            url.searchParams.delete('action');
+            url.searchParams.delete('token');
+            url.searchParams.delete('expires');
+            window.history.replaceState({}, '', url);
+
+            if (Date.now() > parseInt(expires, 10)) {
+                alert('This session QR has expired. Please ask the administrator for a fresh QR.');
+                return;
+            }
+
+            if (!currentUser) {
+                sessionStorage.setItem('pending_checkin', JSON.stringify({ token, expires }));
+                showView('login-page');
+                const errBox = document.getElementById('login-error');
+                if (errBox) {
+                    errBox.innerText = 'Log in to complete your attendance check-in.';
+                    errBox.classList.remove('hidden');
+                    errBox.classList.add('login-success-msg');
+                }
+            } else if (currentUser.accountType === 'student') {
+                await processStudentCheckin();
+            }
+        } else {
+            // Check session storage for pending checkin after login
+            const pending = sessionStorage.getItem('pending_checkin');
+            if (pending && currentUser && currentUser.accountType === 'student') {
+                const data = JSON.parse(pending);
+                if (Date.now() < parseInt(data.expires, 10)) {
+                    await processStudentCheckin();
+                }
+                sessionStorage.removeItem('pending_checkin');
+            }
+        }
+    }
+
+    async function processStudentCheckin() {
+        if (!currentUser || currentUser.accountType !== 'student') return;
+        
+        const now = new Date();
+        const { error } = await patchEmployee(currentUser.id, {
+            status: deriveDisplayStatus(currentUser, now),
+            shift_status: 'On-Shift',
+            last_check_in_at: now.toISOString(),
+        });
+
+        if (error) {
+            alert('Check-in failed: ' + error.message);
+        } else {
+            showToast('Attendance marked successfully!');
+            loadStudentData();
+        }
+    }
+
     const ATT_DYNAMIC_TTL_MS = 45 * 1000;
     const ATT_DYNAMIC_REFRESH_MS = 25 * 1000;
     let attendanceQrInterval = null;
@@ -1019,14 +1211,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==================== LOGOUT FUNCTION ====================
-    // Clears user session and returns to login page
+    // Clears user session and returns to landing page
     window.logout = function() {
         currentUser = null;              // Clear user data
         clearInterval(shiftInterval);    // Stop any active timers
         stopDynamicAttendanceQr();
         supabase.auth.signOut().catch(() => {});
-        document.getElementById('app-page').classList.add('hidden');
-        document.getElementById('login-page').classList.remove('hidden');
+        showView('landing-page');
     }
 
     // ==================== DASHBOARD INITIALIZATION ====================
@@ -1035,51 +1226,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // Configures navigation, loads initial data, and starts services
     
     function initDashboard() {
-        // Hide login page and show app page
-        document.getElementById('login-page').classList.add('hidden');
-        document.getElementById('app-page').classList.remove('hidden');
+        // Show app page and hide others
+        showView('app-page');
         
-        const isAdm = currentUser.accountType === 'admin';
-        
-        // Update user display name
-        document.getElementById('nav-user-name').innerText = isAdm ? currentUser.admin_name : currentUser.full_name;
-        
-        // Load and display profile picture
-        // Falls back to default avatar if no custom image set
-        const avatarSrc = currentUser.avatar_url && currentUser.avatar_url.trim() !== '' ? currentUser.avatar_url : 'https://i.pravatar.cc/150?img=11';
-        const navAvatar = document.getElementById('nav-avatar');
-        if (navAvatar) navAvatar.src = avatarSrc;
+        // Expose state for React Dashboard
+        window.syncState = {
+            currentUser,
+            supabase,
+            logout: window.logout,
+            showToast: window.showToast,
+            localDateStr,
+            deriveDisplayStatus,
+            statusBadgeHtml
+        };
 
-        document.getElementById('admin-nav').style.display = isAdm ? 'flex' : 'none';
-        document.getElementById('student-nav').style.display = isAdm ? 'none' : 'flex';
-        
-        // Show edit profile button only for admins
-        if(isAdm) document.getElementById('admin-edit-self-btn').classList.remove('hidden');
-        else document.getElementById('admin-edit-self-btn').classList.add('hidden');
+        // Dispatch event to mount/update React Dashboard
+        document.dispatchEvent(new CustomEvent('syncorg-dashboard-init'));
 
-        // Hide all sections first
-        document.querySelectorAll('.view-section').forEach(s => s.classList.add('hidden'));
-        
-        // Update greeting with time of day (animated SplitText)
-        updateGreetings();
-
-        // Load role-specific data
-        if (isAdm) {
-            // ADMIN: Show dashboard home and load employee data
-            document.getElementById('section-home').classList.remove('hidden');
+        // Keep existing non-UI logic if any (timers, etc.)
+        if (currentUser.accountType === 'admin') {
             loadAdminData();
-            startGlobalShiftTimer();  // Start real-time shift tracking
+            startGlobalShiftTimer();
         } else {
-            // STUDENT: Show student home and load own data
-            document.getElementById('student-home').classList.remove('hidden');
             loadStudentData();
             startDynamicAttendanceQr();
         }
         
-        // Initialize MagicBento effects on dashboard cards
-        setTimeout(() => initMagicBento(), 200);
-        
-        setTimeout(() => bindCardSpotlights(), 300);
+        checkPendingCheckin();
     }
 
     // ==================== DYNAMIC GREETING with SplitText Animation ====================
@@ -1126,7 +1299,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    const navBtns = document.querySelectorAll('.nav-btn[data-target]');
+    const navBtns = document.querySelectorAll('.sidebar-btn[data-target]');
     navBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1138,7 +1311,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.view-section').forEach(s => s.classList.add('hidden'));
             
             const targetId = btn.getAttribute('data-target');
-            document.getElementById(targetId).classList.remove('hidden');
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) {
+                targetEl.classList.remove('hidden');
+            }
 
             if(targetId === 'section-dashboards') void renderCharts();
             if(targetId === 'section-shift') renderShifts();
@@ -2153,7 +2329,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function loadStudentData() {
         // Fetch fresh student data from Supabase (syncs admin changes immediately)
-        const { data, error } = await supabase.from('employees').select('*').eq('id', currentUser.id).single();
+        const { data, error } = await supabase.from('employees').select('*').eq('id', currentUser.id).maybeSingle();
         if (data && !error) currentUser = { ...currentUser, ...data }; 
 
         // === SAFE DOM UPDATES (Prevents "Cannot set properties of null" errors) ===
@@ -2172,6 +2348,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const elShift = document.getElementById('std-shift-select');
         if(elShift) elShift.value = currentUser.shift_status || 'Off-Shift';
         
+        // Update shift status badge
+        const shiftStatusBadge = document.getElementById('std-shift-status-badge');
+        if (shiftStatusBadge) {
+            shiftStatusBadge.textContent = currentUser.shift_status || 'Off-Shift';
+            shiftStatusBadge.className = `badge-status ${currentUser.shift_status === 'On-Shift' ? 'badge-status--present' : currentUser.shift_status === 'Break' ? 'badge-status--late' : 'badge-status--norecord'}`;
+        }
+
         // Update attendance status with color coding
         const stat = document.getElementById('std-current-status');
         if (stat) {
@@ -2179,6 +2362,9 @@ document.addEventListener('DOMContentLoaded', () => {
             stat.className = 'std-status-badge-wrap';
             stat.innerHTML = statusBadgeHtml(d);
         }
+
+        generateStudentSchedule(currentUser.batch || 'Batch 1');
+        updateStudentShiftTimer();
 
         // 2. Virtual ID Tab - ID Card Display
         const vidName = document.getElementById('embedded-vid-name');
@@ -2287,6 +2473,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function updateStudentShiftTimer() {
+        const timerEl = document.getElementById('std-shift-timer');
+        if (!timerEl || !currentUser || currentUser.shift_status !== 'On-Shift') {
+            if (timerEl && (!currentUser || currentUser.shift_status !== 'On-Shift')) timerEl.textContent = '00:00:00';
+            return;
+        }
+
+        if (currentUser.last_check_in_at) {
+            const start = new Date(currentUser.last_check_in_at);
+            const update = () => {
+                if (currentUser.shift_status !== 'On-Shift') return;
+                const now = new Date();
+                const diff = Math.floor((now - start) / 1000);
+                if (diff < 0) { timerEl.textContent = '00:00:00'; return; }
+                const h = Math.floor(diff / 3600);
+                const m = Math.floor((diff % 3600) / 60);
+                const s = diff % 60;
+                timerEl.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            };
+            update();
+            if (window._stdShiftInterval) clearInterval(window._stdShiftInterval);
+            window._stdShiftInterval = setInterval(update, 1000);
+        }
+    }
+
     // ==================== SUBMIT ACTIVITY LOG ====================
     // Logs student's shift status and optional comments
     // Used to track when students go on/off shift or take breaks
@@ -2295,19 +2506,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if(submitLogBtn) {
         submitLogBtn.addEventListener('click', async () => {
             const ns = document.getElementById('std-shift-select').value;
+            const comment = document.getElementById('std-comment-input').value;
             
             // Update shift status in database
-            await supabase.from('employees').update({ shift_status: ns }).eq('id', currentUser.id);
+            const updates = { shift_status: ns };
+            if (ns === 'On-Shift') {
+                updates.last_check_in_at = new Date().toISOString();
+            }
+            await supabase.from('employees').update(updates).eq('id', currentUser.id);
             
             // Update local state
             currentUser.shift_status = ns;
+            if (ns === 'On-Shift') currentUser.last_check_in_at = updates.last_check_in_at;
             
             // Log activity
-            addFeedLog(currentUser.full_name, `updated shift to ${ns}`);
+            addFeedLog(currentUser.full_name, `updated shift to ${ns}${comment ? ': ' + comment : ''}`);
+            
+            // Refresh UI
+            await loadStudentData();
             
             // Show appropriate message
             if(ns === 'Off-Shift') showToast("Shift ended. Email Notification sent.");
-            else showToast("Activity logged.");
+            else showToast("Shift status updated.");
             
             // Clear comment field
             const commentInput = document.getElementById('std-comment-input');
@@ -2435,6 +2655,78 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==================== MAGIC BENTO - Interactive Dashboard Cards ====================
     // Global spotlight + BorderGlow-style edge highlight (see border-glow-init.js)
     
+    // Add Admin Session QR toggle
+    const adminQrToggleBtn = document.getElementById('admin-toggle-session-qr');
+    if (adminQrToggleBtn) {
+        adminQrToggleBtn.addEventListener('click', () => {
+            if (sessionQrInterval) stopAdminSessionQr();
+            else startAdminSessionQr();
+        });
+    }
+
+    // Add Student Scan Admin QR button
+    const stdScanAdminQrBtn = document.getElementById('std-scan-admin-qr-btn');
+    if (stdScanAdminQrBtn) {
+        stdScanAdminQrBtn.addEventListener('click', async () => {
+            const readerEl = document.getElementById('reader');
+            if (readerEl) readerEl.innerHTML = '';
+            document.getElementById('qr-modal').classList.remove('hidden');
+
+            const mobile = isMobileQrContext();
+            const boxW = mobile ? Math.min(300, Math.max(200, window.innerWidth - 40)) : 250;
+
+            if (mobile) {
+                html5QrCodeCamera = new Html5Qrcode('reader');
+                const config = { fps: 10, qrbox: { width: boxW, height: boxW }, aspectRatio: 1.0 };
+                try {
+                    await html5QrCodeCamera.start(
+                        { facingMode: 'environment' },
+                        config,
+                        async (text) => {
+                            // Process URL-style QR
+                            if (text.includes('action=checkin')) {
+                                const url = new URL(text);
+                                const params = url.searchParams;
+                                const action = params.get('action');
+                                const token = params.get('token');
+                                const expires = params.get('expires');
+                                if (action === 'checkin' && token && expires) {
+                                    if (Date.now() > parseInt(expires, 10)) {
+                                        alert('This QR has expired.');
+                                    } else {
+                                        await processStudentCheckin();
+                                    }
+                                    await closeScanner();
+                                }
+                            } else {
+                                alert('Invalid QR code format for attendance.');
+                                await closeScanner();
+                            }
+                        },
+                        () => {},
+                    );
+                } catch (e) {
+                    alert('Could not start camera: ' + e.message);
+                    await closeScanner();
+                }
+            } else {
+                html5QrcodeScanner = new Html5QrcodeScanner('reader', { fps: 10, qrbox: 250 });
+                html5QrcodeScanner.render(async (text) => {
+                    if (text.includes('action=checkin')) {
+                        await processStudentCheckin();
+                        await closeScanner();
+                    } else {
+                        alert('Invalid QR code format for attendance.');
+                        await closeScanner();
+                    }
+                });
+            }
+        });
+    }
+
+    // Check for pending check-in from URL on load
+    checkPendingCheckin();
+
     const BENTO_GLOW_COLOR = '59, 130, 246';
     const BENTO_SPOTLIGHT_RADIUS = 400;
 

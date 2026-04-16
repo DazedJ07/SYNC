@@ -5,12 +5,14 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ColorBends from './components/ColorBends/ColorBends.jsx';
+import LandingPage from './LandingPage.jsx';
+import Dashboard from './Dashboard.jsx';
 
 /** Matches React Bits Background Studio (monochrome) + your exported props */
 const BENDS_PROPS = {
     rotation: 45,
     speed: 0.7,
-    colors: ['#000000', '#787878', '#ffffff'],
+    colors: ['#000000', '#1D2545', '#ffffff'],
     transparent: true,
     autoRotate: 0,
     scale: 1,
@@ -47,9 +49,18 @@ function LoginColorBends() {
     return <ColorBends {...BENDS_PROPS} pointerMode="window" />;
 }
 
-/** Dashboard uses a solid background; ColorBends stays on login/sign-up only. */
 function AppColorBends() {
     return null;
+}
+
+const landingEl = document.getElementById('landing-page-root');
+if (landingEl) {
+    createRoot(landingEl).render(<LandingPage />);
+}
+
+const dashboardEl = document.getElementById('dashboard-root');
+if (dashboardEl) {
+    createRoot(dashboardEl).render(<Dashboard />);
 }
 
 const loginEl = document.getElementById('color-bends-root');
