@@ -234,21 +234,35 @@ function AdminOverview({ showToast }) {
       const { data: employees } = await supabase.from('employees').select('*');
       if (employees) {
         const now = new Date();
-        const total = employees.length;
-        const present = employees.filter(e => deriveDisplayStatus(e, now) === 'Present').length;
-        const late = employees.filter(e => deriveDisplayStatus(e, now) === 'Late').length;
-        const absent = employees.filter(e => deriveDisplayStatus(e, now) === 'Absent').length;
-        setStats({ total, present, late, absent });
+        const statsObj = {
+          total: employees.length,
+          present: employees.filter(e => deriveDisplayStatus(e, now) === 'Present').length,
+          late: employees.filter(e => deriveDisplayStatus(e, now) === 'Late').length,
+          absent: employees.filter(e => deriveDisplayStatus(e, now) === 'Absent').length
+        };
+        setStats(statsObj);
       }
-      
       const feed = await fetchRecentActivities();
       setActivities(feed);
       setLoading(false);
     };
+
     fetch();
-    const i = setInterval(fetch, 30000);
-    return () => clearInterval(i);
+
+    // Enable Real-time subscriptions
+    const channel = supabase.channel('db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_daily' }, fetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'excuse_requests' }, fetch)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'employees' }, fetch)
+      .subscribe();
+
+    const i = setInterval(fetch, 60000); // Fallback polling
+    return () => {
+      clearInterval(i);
+      supabase.removeChannel(channel);
+    };
   }, []);
+
 
   const kpis = [
     { label: 'Total Students', value: stats.total, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -753,17 +767,21 @@ function StudentDashboard({ showToast }) {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    let i;
     if (currentUser.shift_status === 'On-Shift') {
-      const i = setInterval(() => setTick(t => t + 1), 1000);
-      return () => clearInterval(i);
+      i = setInterval(() => setTick(t => t + 1), 1000);
     }
-  }, [currentUser.shift_status]);
+    return () => { if (i) clearInterval(i); };
+  }, [currentUser.shift_status, currentUser.last_check_in_at]);
+
 
   const getShiftDuration = () => {
     if (currentUser.shift_status === 'Off-Shift' || !currentUser.last_check_in_at) return '00:00:00';
     let totalSecs = currentUser.shift_seconds || 0;
-    if (currentUser.shift_status === 'On-Shift') {
-      const elapsed = Math.max(0, Math.floor((new Date() - new Date(currentUser.last_check_in_at)) / 1000));
+    if (currentUser.shift_status === 'On-Shift' && currentUser.last_check_in_at) {
+      const start = new Date(currentUser.last_check_in_at).getTime();
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.floor((now - start) / 1000));
       totalSecs += elapsed;
     }
     const h = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
@@ -1054,9 +1072,19 @@ function StudentDirectory() {
   const [employees, setEmployees] = useState([]);
   const [search, setSearch] = useState('');
 
+  const fetchEmps = async () => {
+    const { data } = await supabase.from('employees').select('*');
+    setEmployees(data || []);
+  };
+
   useEffect(() => {
-    supabase.from('employees').select('*').then(({ data }) => setEmployees(data || []));
+    fetchEmps();
+    const ch = supabase.channel('directory-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, fetchEmps)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, []);
+
 
   const filtered = employees.filter(e => {
     const q = search.toLowerCase();

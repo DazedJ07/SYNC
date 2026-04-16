@@ -11,6 +11,25 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingCheckin, setPendingCheckin] = useState(null);
 
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('sync_session');
+    if (saved && !currentUser) {
+      try {
+        const { id, type } = JSON.parse(saved);
+        const table = type === 'admin' ? 'admins' : 'employees';
+        supabase.from(table).select('*').eq('id', id).maybeSingle().then(({ data, error }) => {
+          if (data && !error) {
+            setCurrentUser({ ...data, accountType: type });
+          } else {
+            localStorage.removeItem('sync_session');
+          }
+        });
+      } catch { localStorage.removeItem('sync_session'); }
+    }
+  }, []); // eslint-disable-line
+
+
   // Check URL params for QR-based checkin on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -124,6 +143,7 @@ export function AuthProvider({ children }) {
     // Direct login
     if (clientIp) localStorage.setItem(key, clientIp);
     const user = { ...res.data, accountType: role };
+    localStorage.setItem('sync_session', JSON.stringify({ id: user.id, type: role }));
     setCurrentUser(user);
     return { success: true, user };
   }, []);
@@ -149,6 +169,7 @@ export function AuthProvider({ children }) {
     if (clientIp) localStorage.setItem(key, clientIp);
 
     const user = { ...userData, accountType: role };
+    localStorage.setItem('sync_session', JSON.stringify({ id: user.id, type: role }));
     setCurrentUser(user);
     return user;
   }, []);
@@ -220,13 +241,17 @@ export function AuthProvider({ children }) {
       const { data: admin } = await supabase.from('admins').select('*').eq('email', rawEmail).maybeSingle();
       if (admin) {
         await supabase.auth.signOut().catch(() => {});
-        setCurrentUser({ ...admin, accountType: 'admin' });
+        const user = { ...admin, accountType: 'admin' };
+        localStorage.setItem('sync_session', JSON.stringify({ id: user.id, type: 'admin' }));
+        setCurrentUser(user);
         return;
       }
       const { data: emp } = await supabase.from('employees').select('*').eq('email', rawEmail).maybeSingle();
       if (emp) {
         await supabase.auth.signOut().catch(() => {});
-        setCurrentUser({ ...emp, accountType: 'student' });
+        const user = { ...emp, accountType: 'student' };
+        localStorage.setItem('sync_session', JSON.stringify({ id: user.id, type: 'student' }));
+        setCurrentUser(user);
         return;
       }
       await supabase.auth.signOut().catch(() => {});
@@ -244,6 +269,7 @@ export function AuthProvider({ children }) {
 
   // Logout
   const logout = useCallback(() => {
+    localStorage.removeItem('sync_session');
     setCurrentUser(null);
     supabase.auth.signOut().catch(() => {});
   }, []);
