@@ -39,7 +39,7 @@ const StatusBadge = ({ status }) => {
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { currentUser, logout, processStudentCheckin, updateCurrentUser } = useAuth();
+  const { currentUser, logout, processStudentCheckin, toggleShiftStatus, endShift, updateCurrentUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [activeSection, setActiveSection] = useState('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -750,10 +750,26 @@ function StudentDashboard({ showToast }) {
   const status = deriveDisplayStatus(currentUser);
   const isCheckedIn = status === 'Present' || status === 'Late' || status === 'Excused';
 
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (currentUser.shift_status === 'On-Shift') {
+      const i = setInterval(() => setTick(t => t + 1), 1000);
+      return () => clearInterval(i);
+    }
+  }, [currentUser.shift_status]);
+
   const getShiftDuration = () => {
-    if (currentUser.shift_status !== 'On-Shift' || !currentUser.last_check_in_at) return '00:00:00';
-    const diff = Math.max(0, Math.floor((new Date() - new Date(currentUser.last_check_in_at)) / 1000));
-    return `${Math.floor(diff / 3600).toString().padStart(2, '0')}:${Math.floor((diff % 3600) / 60).toString().padStart(2, '0')}:${(diff % 60).toString().padStart(2, '0')}`;
+    if (currentUser.shift_status === 'Off-Shift' || !currentUser.last_check_in_at) return '00:00:00';
+    let totalSecs = currentUser.shift_seconds || 0;
+    if (currentUser.shift_status === 'On-Shift') {
+      const elapsed = Math.max(0, Math.floor((new Date() - new Date(currentUser.last_check_in_at)) / 1000));
+      totalSecs += elapsed;
+    }
+    const h = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
+    const m = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
+    const s = (totalSecs % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
   };
 
   // QR Scanner logic
@@ -849,14 +865,41 @@ function StudentDashboard({ showToast }) {
           <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Status</p>
           <StatusBadge status={status} />
         </CardContent></Card>
-        <Card className={!isCheckedIn ? 'opacity-50' : ''}><CardContent className="p-5">
-          <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Shift</p>
-          <p className="text-lg font-bold text-foreground">{isCheckedIn ? (currentUser.shift_status || 'Off-Shift') : 'Not checked in'}</p>
-        </CardContent></Card>
-        <Card className={!isCheckedIn ? 'opacity-50' : ''}><CardContent className="p-5">
-          <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Duration</p>
-          <p className="text-lg font-bold font-mono text-foreground">{isCheckedIn ? getShiftDuration() : '--:--:--'}</p>
-        </CardContent></Card>
+        <Card className={!isCheckedIn ? 'opacity-50' : ''}>
+          <CardContent className="p-5">
+            <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Shift</p>
+            <p className="text-lg font-bold text-foreground mb-3">{isCheckedIn ? (currentUser.shift_status || 'Off-Shift') : 'Not checked in'}</p>
+            {isCheckedIn && currentUser.shift_status !== 'Off-Shift' && (
+              <Button variant="outline" size="sm" className="w-full h-8 text-[11px]" 
+                onClick={async () => {
+                  const transitioningToPaused = currentUser.shift_status === 'On-Shift';
+                  const { error } = await toggleShiftStatus(currentUser);
+                  if (!error) showToast(transitioningToPaused ? 'Break Started' : 'Shift Resumed');
+                }}
+              >
+                {currentUser.shift_status === 'Paused' ? <Timer size={14} className="mr-1.5" /> : <Clock size={14} className="mr-1.5" />}
+                {currentUser.shift_status === 'Paused' ? 'Resume Shift' : 'Pause Break'}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+        <Card className={!isCheckedIn ? 'opacity-50' : ''}>
+          <CardContent className="p-5">
+            <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Duration</p>
+            <p className="text-lg font-bold font-mono text-foreground mb-3">{isCheckedIn ? getShiftDuration() : '--:--:--'}</p>
+            {isCheckedIn && currentUser.shift_status !== 'Off-Shift' && (
+              <Button variant="destructive" size="sm" className="w-full h-8 text-[11px]" 
+                onClick={async () => {
+                  const timeStr = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                  const { error } = await endShift(currentUser);
+                  if (!error) showToast(`Successfully timed out at ${timeStr}`);
+                }}
+              >
+                <LogOut size={14} className="mr-1.5" /> Time Out
+              </Button>
+            )}
+          </CardContent>
+        </Card>
         <Card><CardContent className="p-5">
           <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Batch</p>
           <p className="text-lg font-bold text-foreground">{currentUser.batch || 'N/A'}</p>

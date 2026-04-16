@@ -71,6 +71,7 @@ export function AuthProvider({ children }) {
         status: st,
         shift_status: 'On-Shift',
         last_check_in_at: now.toISOString(),
+        shift_seconds: 0
       });
 
       sessionStorage.removeItem('pending_checkin');
@@ -252,12 +253,60 @@ export function AuthProvider({ children }) {
     setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
   }, []);
 
+  // ── Shift Management ──────────────────────────────────────────────────────────
+  const toggleShiftStatus = useCallback(async (user) => {
+    if (!user || user.accountType !== 'student') return { error: { message: 'Not a student' } };
+    const now = new Date();
+    const isPaused = user.shift_status === 'Paused';
+    const isOnShift = user.shift_status === 'On-Shift';
+
+    let updates = {};
+    if (isOnShift) {
+      // On-Shift -> Paused
+      const elapsed = Math.max(0, Math.floor((now - new Date(user.last_check_in_at)) / 1000));
+      updates = {
+        shift_status: 'Paused',
+        shift_seconds: (user.shift_seconds || 0) + elapsed
+      };
+    } else if (isPaused) {
+      // Paused -> On-Shift
+      updates = {
+        shift_status: 'On-Shift',
+        last_check_in_at: now.toISOString()
+      };
+    } else {
+      // Off-Shift -> On-Shift (forced start if needed, but QR covers this usually)
+      updates = {
+        shift_status: 'On-Shift',
+        last_check_in_at: now.toISOString(),
+        shift_seconds: 0
+      };
+    }
+
+    const { error } = await patchEmployee(user.id, updates);
+    if (!error) setCurrentUser(prev => ({ ...prev, ...updates }));
+    return { error };
+  }, []);
+
+  const endShift = useCallback(async (user) => {
+    if (!user || user.accountType !== 'student') return { error: { message: 'Not a student' } };
+    const updates = {
+      shift_status: 'Off-Shift',
+      shift_seconds: 0
+    };
+    const { error } = await patchEmployee(user.id, updates);
+    if (!error) setCurrentUser(prev => ({ ...prev, ...updates }));
+    return { error };
+  }, []);
+
+
   return (
     <AuthContext.Provider value={{
       currentUser, isLoading, pendingCheckin,
       login, logout, sendLoginOtp, verifyLoginOtp,
       sendSignupOtp, completeSignup, assertIdentifiersFree,
       signInWithGoogle, processStudentCheckin, updateCurrentUser,
+      toggleShiftStatus, endShift,
       setCurrentUser, setPendingCheckin,
       supabase, ORG_SECRET
     }}>
