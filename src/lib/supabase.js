@@ -85,6 +85,13 @@ export async function patchEmployee(id, fields) {
   return { error };
 }
 
+// ── Patch admin ─────────────────────────────────────────────────────────────
+export async function patchAdmin(id, fields) {
+  const { error } = await supabase.from('admins').update(fields).eq('id', id);
+  return { error };
+}
+
+
 // ── IP helpers ────────────────────────────────────────────────────────────────
 export function ipStorageKey(username, role) {
   return `syncorg_last_ip_${role}_${username.trim().toLowerCase()}`;
@@ -111,11 +118,8 @@ export function maskEmail(email) {
 // ── App base URL (for QR redirects, OAuth) ────────────────────────────────────
 export function getAppBaseUrl() {
   const origin = window.location.origin;
-  const host = window.location.hostname;
-  const isLocal = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local') || /^192\.168\./.test(host);
-  const envUrl = String(import.meta.env.VITE_SITE_URL || '').trim().replace(/\/+$/, '');
-  if (envUrl && !isLocal && !envUrl.includes('localhost')) return envUrl;
-  return origin.endsWith('/') ? origin : origin + '/';
+  const url = origin.endsWith('/') ? origin : origin + '/';
+  return url;
 }
 
 // ── Monthly attendance for charts ─────────────────────────────────────────────
@@ -178,3 +182,45 @@ export function formatSignupDbError(err) {
   }
   return msg || 'Something went wrong.';
 }
+
+// ── Fetch unified recent activity feed ────────────────────────────────────────
+export async function fetchRecentActivities() {
+  try {
+    // Try to fetch latest 6 attendance entries with joined employee info
+    // (Joining depends on FK relationships in Supabase)
+    const { data: att } = await supabase
+      .from('attendance_daily')
+      .select('status, updated_at, employees(full_name, avatar_url)')
+      .order('updated_at', { ascending: false })
+      .limit(6);
+
+    const { data: exc } = await supabase
+      .from('excuse_requests')
+      .select('status, created_at, employees(full_name, avatar_url)')
+      .order('created_at', { ascending: false })
+      .limit(6);
+
+    const attItems = (att || []).map(a => ({
+      name: a.employees?.full_name || 'Student',
+      avatar: a.employees?.avatar_url,
+      action: `marked ${a.status}`,
+      time: a.updated_at
+    }));
+
+    const excItems = (exc || []).map(e => ({
+      name: e.employees?.full_name || 'Student',
+      avatar: e.employees?.avatar_url,
+      action: 'submitted Excuse',
+      time: e.created_at
+    }));
+
+    // Sort by timestamp desc
+    return [...attItems, ...excItems]
+      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+      .slice(0, 6);
+  } catch (err) {
+    console.error('Activity fetch failed:', err);
+    return [];
+  }
+}
+

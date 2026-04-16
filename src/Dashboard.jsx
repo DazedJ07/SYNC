@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './context/AuthContext.jsx';
 import { useTheme } from './context/ThemeContext.jsx';
-import { supabase, deriveDisplayStatus, patchEmployee, localDateStr, fetchMonthlyAttendanceFromSupabase, upsertAttendanceDaily } from './lib/supabase.js';
+import { supabase, deriveDisplayStatus, patchEmployee, patchAdmin, localDateStr, fetchMonthlyAttendanceFromSupabase, fetchRecentActivities, upsertAttendanceDaily } from './lib/supabase.js';
 import { buildAdminSessionPayload, buildRollingAttendancePayload, parseScannedAttendancePayload, getQrImageUrl } from './lib/qr.js';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/card.tsx';
@@ -43,6 +43,7 @@ export default function Dashboard() {
   const { theme, toggleTheme } = useTheme();
   const [activeSection, setActiveSection] = useState('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [adminProfileOpen, setAdminProfileOpen] = useState(false);
   const [toast, setToast] = useState('');
 
   const showToast = useCallback((msg) => {
@@ -82,8 +83,8 @@ export default function Dashboard() {
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
       <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-40 w-64 border-r border-border bg-card/80 backdrop-blur-xl flex flex-col transition-transform duration-300`}>
         <div className="p-5 flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-xl bg-foreground flex items-center justify-center">
-            <img src="/Logo/1.svg" className="h-5 w-auto invert dark:invert-0 brightness-0 dark:brightness-100" alt="Logo" />
+          <div className="h-9 w-9 rounded-xl bg-foreground flex items-center justify-center overflow-hidden">
+            <img src={theme === 'dark' ? "/Logo/2.svg" : "/Logo/1.svg"} className="h-6 w-auto" alt="Logo" />
           </div>
           <span className="font-bold text-lg tracking-tight text-foreground">SYNC.org</span>
         </div>
@@ -140,12 +141,26 @@ export default function Dashboard() {
                 <p className="text-sm font-semibold leading-none text-foreground">{displayName}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{isAdmin ? 'Administrator' : 'Student'}</p>
               </div>
-              <div className="h-9 w-9 rounded-full bg-muted border border-border overflow-hidden">
+              <button 
+                onClick={() => isAdmin ? setAdminProfileOpen(true) : setActiveSection('my-id')} 
+                className="h-9 w-9 rounded-full bg-muted border border-border overflow-hidden hover:ring-2 hover:ring-primary/20 transition-all"
+              >
                 <img src={currentUser.avatar_url || 'https://i.pravatar.cc/150?img=11'} alt="" className="h-full w-full object-cover" />
-              </div>
+              </button>
             </div>
           </div>
         </header>
+
+        {/* Admin Profile Dialog */}
+        {isAdmin && (
+          <AdminProfileDialog 
+            open={adminProfileOpen} 
+            onOpenChange={setAdminProfileOpen} 
+            user={currentUser} 
+            onUpdate={updateCurrentUser} 
+          />
+        )}
+
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
@@ -207,6 +222,7 @@ function ComingSoon({ title }) {
 
 function AdminOverview({ showToast }) {
   const [stats, setStats] = useState({ total: 0, present: 0, late: 0, absent: 0 });
+  const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const weekData = [
     { name: 'Mon', total: 45 }, { name: 'Tue', total: 52 }, { name: 'Wed', total: 48 },
@@ -224,6 +240,9 @@ function AdminOverview({ showToast }) {
         const absent = employees.filter(e => deriveDisplayStatus(e, now) === 'Absent').length;
         setStats({ total, present, late, absent });
       }
+      
+      const feed = await fetchRecentActivities();
+      setActivities(feed);
       setLoading(false);
     };
     fetch();
@@ -285,25 +304,26 @@ function AdminOverview({ showToast }) {
           <CardHeader className="pb-2"><CardTitle className="text-base">Recent Activity</CardTitle><CardDescription>Live updates</CardDescription></CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {[
-                { name: 'Medina, Jian Carlos', action: 'marked Present', time: '2m ago' },
-                { name: 'Mercado, Adrian', action: 'started Shift', time: '5m ago' },
-                { name: 'Legaspi, Sam', action: 'updated Profile', time: '12m ago' },
-                { name: 'Pornobi, Diana', action: 'marked Late', time: '15m ago' },
-                { name: 'Medellin, Herz', action: 'submitted Excuse', time: '20m ago' },
-              ].map((item, i) => (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3"><Skeleton className="h-9 w-9 rounded-full" /><div className="flex-1 space-y-1"><Skeleton className="h-3 w-2/3" /><Skeleton className="h-2 w-1/3" /></div></div>
+                ))
+              ) : activities.length === 0 ? (
+                <p className="text-center py-8 text-xs text-muted-foreground italic">No recent activity found.</p>
+              ) : activities.map((item, i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-full bg-muted border border-border overflow-hidden flex-shrink-0">
-                    <img src={`https://i.pravatar.cc/150?img=${11 + i}`} alt="" className="h-full w-full object-cover" />
+                  <div className="h-9 w-9 rounded-full bg-muted border border-border overflow-hidden flex-shrink-0 shadow-sm">
+                    <img src={item.avatar || 'https://i.pravatar.cc/150?img=11'} alt="" className="h-full w-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-foreground truncate">{item.name}</p>
                     <p className="text-xs text-muted-foreground">{item.action}</p>
                   </div>
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">{item.time}</span>
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatTimeAgo(item.time)}</span>
                 </div>
               ))}
             </div>
+
           </CardContent>
         </Card>
       </div>
@@ -922,44 +942,66 @@ function StudentDashboard({ showToast }) {
 
 // ── Student ID ────────────────────────────────────────────────────────────────
 function StudentID() {
-  const { currentUser } = useAuth();
+  const { currentUser, updateCurrentUser } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
   const qrUrl = getQrImageUrl(currentUser.emp_id || 'EV-000', 200);
 
   return (
     <div className="space-y-6">
-      <div><h1 className="text-2xl font-bold text-foreground">My ID Card</h1><p className="text-sm text-muted-foreground">Your virtual identification</p></div>
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-bold text-foreground">My ID Card</h1><p className="text-sm text-muted-foreground">Your virtual identification</p></div>
+        <Button variant="outline" size="sm" onClick={() => setProfileOpen(true)}>
+          <Edit size={14} className="mr-1.5" /> Edit Profile
+        </Button>
+      </div>
 
       <div className="max-w-md mx-auto">
         <Card className="overflow-hidden">
-          <div className="h-20 bg-gradient-to-r from-foreground/10 to-foreground/5" />
-          <CardContent className="relative -mt-10 flex flex-col items-center pb-6">
-            <div className="h-20 w-20 rounded-2xl border-4 border-background bg-muted overflow-hidden shadow-lg mb-4">
+          <div className="h-24 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
+          <CardContent className="relative -mt-12 flex flex-col items-center pb-8 px-8">
+            <div className="h-24 w-24 rounded-2xl border-4 border-background bg-muted overflow-hidden shadow-xl mb-4 group relative">
               <img src={currentUser.avatar_url || 'https://i.pravatar.cc/150?img=11'} alt="" className="h-full w-full object-cover" />
+              <button 
+                onClick={() => setProfileOpen(true)}
+                className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white"
+              >
+                <Camera size={20} />
+              </button>
             </div>
-            <h2 className="text-xl font-bold text-foreground">{currentUser.full_name}</h2>
-            <p className="text-sm text-muted-foreground">{currentUser.role || 'Student Employee'}</p>
-            <Separator className="my-4 w-full" />
-            <div className="w-full space-y-2 text-sm">
+            <h2 className="text-2xl font-bold text-foreground">{currentUser.full_name}</h2>
+            <p className="text-sm font-medium text-primary uppercase tracking-wider mb-6">{currentUser.role || 'Student Employee'}</p>
+            
+            <div className="w-full space-y-3 bg-muted/50 p-4 rounded-xl border border-border/50">
               {[
-                { label: 'ID', value: currentUser.emp_id },
-                { label: 'Department', value: currentUser.department },
-                { label: 'Team', value: currentUser.team || 'Unassigned' },
-                { label: 'Email', value: currentUser.email },
-                { label: 'Phone', value: currentUser.phone || 'Not on file' },
+                { label: 'Employee ID', value: currentUser.emp_id, icon: Shield },
+                { label: 'Department', value: currentUser.department, icon: Users },
+                { label: 'Team', value: currentUser.team || 'Unassigned', icon: BadgeCheck },
+                { label: 'Email', value: currentUser.email, icon: Bell },
+                { label: 'Phone', value: currentUser.phone || 'Not on file', icon: Clock },
               ].map((item, i) => (
-                <div key={i} className="flex justify-between">
-                  <span className="text-muted-foreground">{item.label}</span>
-                  <span className="font-medium text-foreground">{item.value}</span>
+                <div key={i} className="flex items-center justify-between py-1 border-b border-border/30 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <item.icon size={14} className="text-muted-foreground" />
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">{item.label}</span>
+                  </div>
+                  <span className="text-sm font-medium text-foreground">{item.value}</span>
                 </div>
               ))}
             </div>
-            <Separator className="my-4 w-full" />
-            <div className="bg-white p-3 rounded-xl">
-              <img src={qrUrl} alt="ID QR" className="w-32 h-32" />
+
+            <div className="mt-8 p-3 bg-white rounded-2xl shadow-inner border border-border/50">
+              <img src={qrUrl} alt="ID QR" className="w-40 h-40" />
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <StudentProfileDialog 
+        open={profileOpen} 
+        onOpenChange={setProfileOpen} 
+        user={currentUser} 
+        onUpdate={updateCurrentUser}
+      />
     </div>
   );
 }
@@ -1259,4 +1301,222 @@ function StudentExcuseDialog({ open, onOpenChange, showToast }) {
       </DialogContent>
     </Dialog>
   );
+}
+
+// ── Student Profile Settings Dialog ───────────────────────────────────────────
+function StudentProfileDialog({ open, onOpenChange, user, onUpdate }) {
+  const [name, setName] = useState(user?.full_name || '');
+  const [username, setUsername] = useState(user?.username || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [bio, setBio] = useState(user?.bio || '');
+  const [avatar, setAvatar] = useState(user?.avatar_url || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Sync state when user changes or dialog opens
+  useEffect(() => {
+    if (open && user) {
+      setName(user.full_name || '');
+      setUsername(user.username || '');
+      setPhone(user.phone || '');
+      setBio(user.bio || '');
+      setAvatar(user.avatar_url || '');
+    }
+  }, [open, user]);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 380 * 1024) {
+      setError('Image is too large (max 380KB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAvatar(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    setError('');
+    const { error: patchErr } = await patchEmployee(user.id, {
+      full_name: name,
+      username: username,
+      phone: phone,
+      bio: bio,
+      avatar_url: avatar
+    });
+
+    if (patchErr) {
+      setError(patchErr.message || 'Failed to update profile');
+      setLoading(false);
+    } else {
+      onUpdate({ ...user, full_name: name, username, phone, bio, avatar_url: avatar });
+      setLoading(false);
+      onOpenChange(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Profile</DialogTitle>
+          <DialogDescription>Update your personal information and profile picture.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="flex flex-col items-center gap-4 mb-2">
+            <div className="relative h-24 w-24 rounded-2xl overflow-hidden border-2 border-border shadow-md">
+                <img src={avatar || 'https://i.pravatar.cc/150?img=11'} alt="Avatar" className="h-full w-full object-cover" />
+                <label className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                    <Camera size={20} className="text-white" />
+                    <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                </label>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Click image to upload (max 380KB)</p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="prof-name">Full Name</Label>
+              <Input id="prof-name" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="prof-user">Username</Label>
+              <Input id="prof-user" value={username} onChange={e => setUsername(e.target.value)} />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="prof-phone">Phone Number</Label>
+            <Input id="prof-phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+63..." />
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="prof-bio">Bio</Label>
+            <Textarea id="prof-bio" value={bio} onChange={e => setBio(e.target.value)} placeholder="A short bit about you..." rows={2} />
+          </div>
+          
+          {error && <p className="text-xs text-destructive font-medium">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>
+            {loading ? 'Saving...' : 'Save changes'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+// ── Admin Profile Settings Dialog ─────────────────────────────────────────────
+function AdminProfileDialog({ open, onOpenChange, user, onUpdate }) {
+  const [name, setName] = useState(user?.admin_name || '');
+  const [username, setUsername] = useState(user?.username || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [avatar, setAvatar] = useState(user?.avatar_url || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open && user) {
+      setName(user.admin_name || '');
+      setUsername(user.username || '');
+      setPhone(user.phone || '');
+      setAvatar(user.avatar_url || '');
+    }
+  }, [open, user]);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 380 * 1024) {
+      setError('Image is too large (max 380KB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAvatar(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    setError('');
+    const { error: patchErr } = await patchAdmin(user.id, {
+      admin_name: name,
+      username: username,
+      phone: phone,
+      avatar_url: avatar
+    });
+
+    if (patchErr) {
+      setError(patchErr.message || 'Failed to update admin profile');
+      setLoading(false);
+    } else {
+      onUpdate({ ...user, admin_name: name, username, phone, avatar_url: avatar });
+      setLoading(false);
+      onOpenChange(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Admin Profile</DialogTitle>
+          <DialogDescription>Update your administrator information and profile picture.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="flex flex-col items-center gap-4 mb-2">
+            <div className="relative h-24 w-24 rounded-2xl overflow-hidden border-2 border-border shadow-md">
+                <img src={avatar || 'https://i.pravatar.cc/150?img=11'} alt="Avatar" className="h-full w-full object-cover" />
+                <label className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                    <Camera size={20} className="text-white" />
+                    <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                </label>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Click image to upload (max 380KB)</p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="admin-prof-name">Admin Name</Label>
+              <Input id="admin-prof-name" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="admin-prof-user">Username</Label>
+              <Input id="admin-prof-user" value={username} onChange={e => setUsername(e.target.value)} />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="admin-prof-phone">Phone Number</Label>
+            <Input id="admin-prof-phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+63..." />
+          </div>
+          
+          {error && <p className="text-xs text-destructive font-medium">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>
+            {loading ? 'Saving...' : 'Save changes'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+function formatTimeAgo(dateStr) {
+  if (!dateStr) return 'now';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

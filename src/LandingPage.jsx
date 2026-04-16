@@ -77,7 +77,7 @@ const LandingPage = () => {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-2xl border-b border-border/40">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2.5">
-            <img src="/Logo/1.svg" alt="SYNC Logo" className="h-8 w-auto" />
+            <img src={theme === 'dark' ? "/Logo/2.svg" : "/Logo/1.svg"} alt="SYNC Logo" className="h-8 w-auto" />
             <span className="text-xl font-extrabold tracking-tight text-foreground">SYNC.org</span>
           </motion.div>
 

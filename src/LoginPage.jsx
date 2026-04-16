@@ -206,7 +206,7 @@ export default function LoginPage() {
         className="relative z-10 w-full max-w-[420px]">
         <Card className="bg-card/60 backdrop-blur-2xl border border-border/50 shadow-2xl">
           <CardHeader className="text-center pb-2 pt-6">
-            <img src="/Logo/1.svg" alt="SYNC" className="h-10 w-auto mx-auto mb-3" />
+            <img src={mode === 'signup' ? "/Logo/3.svg" : "/Logo/1.svg"} alt="SYNC" className="h-10 w-auto mx-auto mb-3" />
             <h1 className="text-xl font-bold tracking-tight text-foreground">SYNC.org</h1>
             <p className="text-xs text-muted-foreground mt-1">Attendance & portfolio portal</p>
           </CardHeader>
